@@ -100,15 +100,27 @@ jobs:
           fi
           done <<< "$META_LABELS"
 
-          sudo podman build "${BUILD_ARGS[@]}" --tag "${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}" . --skip-unused-stages=false -v $(pwd):/run/src --security-opt=label=disable
-          sudo rm -f out.ociarchive
+          sudo podman build "${BUILD_ARGS[@]}" --tag "$IMAGE_NAME:$DEFAULT_TAG" .
+
+      - name: Rechunk Image
+        run: |
+          set -xeuo pipefail
+
+          IMAGE_REF="localhost/${IMAGE_NAME}:${DEFAULT_TAG}"
+
+          sudo podman run --rm --mount=type=image,source=$IMAGE_REF,target=/chunkah \
+            -e CHUNKAH_CONFIG_STR="$(sudo podman inspect $IMAGE_REF)" \
+            quay.io/jlebon/chunkah build --label containers.bootc=1 --max-layers 256 | sudo podman load > /tmp/podman_load_output.txt
+
+          IMAGE_ID=$(cat /tmp/podman_load_output.txt | grep "Loaded image" | awk '{print $3}')
+          sudo podman tag "$IMAGE_ID" "$IMAGE_REF"
 
       # TODO: remove me when we have a new podman in 26.04 runners
       # needed because old podman doesn't push layer annotations for
       # the rechunker at all
-      # - name: Install Podman from Brew
-      #   if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-      #   run: /home/linuxbrew/.linuxbrew/bin/brew install podman || exit 1
+      - name: Install Podman from Brew
+        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        run: /home/linuxbrew/.linuxbrew/bin/brew install podman || exit 1
 
       - name: Login to GitHub Container Registry
         if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
@@ -129,18 +141,13 @@ jobs:
           MAX_RETRIES: 3
         run: |
           set -x
-          # # HACK: push two times so layer annotations are present
-          # # TODO: remove me when https://github.com/containers/podman/issues/27796 fixed
-          # for _ in $(seq 2); do
-          #   for tag in $IMAGE_TAGS; do
-          #     for i in $(seq "${MAX_RETRIES}"); do
-          #       sudo /home/linuxbrew/.linuxbrew/bin/podman push --digestfile=/tmp/digestfile "${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}" && break || sleep $((5 * i));
-          #     done
-          #   done
-          # done
-          for tag in $IMAGE_TAGS; do
-            for i in $(seq "${MAX_RETRIES}"); do
-              sudo podman push --digestfile=/tmp/digestfile "${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}" && break || sleep $((5 * i));
+          # HACK: push two times so layer annotations are present
+          # TODO: remove me when https://github.com/containers/podman/issues/27796 fixed
+          for _ in $(seq 2); do
+            for tag in $IMAGE_TAGS; do
+              for i in $(seq "${MAX_RETRIES}"); do
+                sudo /home/linuxbrew/.linuxbrew/bin/podman push --digestfile=/tmp/digestfile "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}" && break || sleep $((5 * i));
+              done
             done
           done
           echo "remote_image_digest=$(< /tmp/digestfile)" | tee "${GITHUB_OUTPUT}"

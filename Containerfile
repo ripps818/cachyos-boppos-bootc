@@ -39,18 +39,27 @@ COPY files/usr/libexec /usr/libexec
 COPY files/usr/share /usr/share
 
 # populate arch linux keyring first
-RUN pacman-key --init && \
+RUN --mount=type=tmpfs,dst=/run \
+    pacman-key --init && \
     pacman-key --populate
 
 # transitioning to cachyos >:D
-RUN pacman-key --recv-keys F3B607488DB35A47 --keyserver keyserver.ubuntu.com && \
+RUN --mount=type=tmpfs,dst=/run \
+    pacman-key --recv-keys F3B607488DB35A47 --keyserver keyserver.ubuntu.com && \
     pacman-key --lsign-key F3B607488DB35A47 && \
     pacman -Sy && \
-    pacman -S --needed --noconfirm cachyos-keyring cachyos-mirrorlist cachyos-v3-mirrorlist cachyos-v4-mirrorlist cachyos-hooks chwd && \
-    pacman -Syu --noconfirm && pacman -S --clean --noconfirm
+    pacman -S --needed --noconfirm cachyos-keyring \
+        cachyos-mirrorlist \
+        cachyos-v3-mirrorlist \
+        cachyos-v4-mirrorlist \
+        cachyos-hooks \
+        chwd && \
+    pacman -Syu --noconfirm && \
+    pacman -S --clean --noconfirm
 
 # add a repo for bootc by hec
-RUN pacman-key --recv-key 5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB --keyserver keyserver.ubuntu.com && \
+RUN --mount=type=tmpfs,dst=/run \
+    pacman-key --recv-key 5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB --keyserver keyserver.ubuntu.com && \
     pacman-key --lsign-key 5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB && \
     echo -e '[bootc]\nSigLevel = Required\nServer=https://github.com/hecknt/arch-bootc-pkgs/releases/download/$repo' >> /etc/pacman.conf
 
@@ -59,22 +68,216 @@ RUN pacman-key --recv-key 5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB --keyserver k
 RUN mkdir -p /usr/lib/dracut/dracut.conf.d && \
     echo 'i18n_vars="/usr/share/kbd/consolefonts  /usr/share/kbd/keymaps"' >> /usr/lib/dracut/dracut.conf.d/lumaeris-cachyos-deckify.conf
 
-RUN pacman -Sy --needed --noconfirm linux-cachyos-deckify linux-cachyos-deckify-headers dracut cpio ostree btrfs-progs e2fsprogs xfsprogs dosfstools skopeo dbus dbus-glib glib2 ostree shadow bootc && pacman -S --clean --noconfirm
+RUN --mount=type=tmpfs,dst=/run \
+    pacman -Sy --needed --noconfirm linux-cachyos-deckify \
+        linux-cachyos-deckify-headers \
+        dracut \
+        cpio \
+        ostree \
+        btrfs-progs \
+        e2fsprogs \
+        xfsprogs \
+        dosfstools \
+        skopeo \
+        dbus \
+        dbus-glib \
+        glib2 \
+        ostree \
+        shadow \
+        bootc && \
+    pacman -S --clean --noconfirm
 
-RUN pacman -Sy --noconfirm cachyos-settings cachyos-micro-settings cachyos-wallpapers && pacman -S --clean --noconfirm
+RUN --mount=type=tmpfs,dst=/run \
+    pacman -Sy --noconfirm cachyos-settings \
+        cachyos-micro-settings \
+        cachyos-wallpapers && \
+    pacman -S --clean --noconfirm
 
 # base-devel + common packages
-RUN pacman -Sy --needed --noconfirm libwnck3 mesa-utils xf86-input-libinput xorg-xdpyinfo xorg-server xorg-xinit xorg-xinput xorg-xkill xorg-xrandr dhclient dnsmasq dnsutils ethtool iwd modemmanager networkmanager networkmanager-openvpn nss-mdns usb_modeswitch wpa_supplicant wireless-regdb xl2tpd bluez bluez-hid2hci bluez-libs bluez-utils pacman-contrib pkgfile rebuild-detector reflector paru accountsservice bash-completion ffmpegthumbnailer gst-libav gst-plugin-pipewire gst-plugins-bad gst-plugins-ugly libdvdcss libgsf libopenraw mlocate poppler-glib xdg-user-dirs xdg-utils efitools haveged nfs-utils nilfs-utils ntp smartmontools unrar unzip xz adobe-source-han-sans-cn-fonts adobe-source-han-sans-jp-fonts adobe-source-han-sans-kr-fonts awesome-terminal-fonts noto-fonts-emoji noto-color-emoji-fontconfig cantarell-fonts freetype2 noto-fonts opendesktop-fonts ttf-bitstream-vera ttf-dejavu ttf-liberation ttf-opensans ttf-meslo-nerd noto-fonts-cjk alsa-firmware alsa-plugins alsa-utils pavucontrol pipewire-pulse wireplumber pipewire-alsa rtkit dmidecode dmraid hdparm hwdetect lsscsi mtools sg3_utils sof-firmware linux-firmware cpupower power-profiles-daemon upower alacritty btop duf findutils fsarchiver git glances hwinfo inxi meld nano-syntax-highlighting fastfetch pv python-defusedxml python-packaging rsync sed vi wget ripgrep micro nano vim openssh && pacman -S --clean --noconfirm
+RUN --mount=type=tmpfs,dst=/run \
+    pacman -Sy --needed --noconfirm libwnck3 \
+        mesa-utils \
+        xf86-input-libinput \
+        xorg-xdpyinfo \
+        xorg-server \
+        xorg-xinit \
+        xorg-xinput \
+        xorg-xkill \
+        xorg-xrandr \
+        dhclient \
+        dnsmasq \
+        dnsutils \
+        ethtool \
+        iwd \
+        modemmanager \
+        networkmanager \
+        networkmanager-openvpn \
+        nss-mdns \
+        usb_modeswitch \
+        wpa_supplicant \
+        wireless-regdb \
+        xl2tpd \
+        bluez \
+        bluez-hid2hci \
+        bluez-libs \
+        bluez-utils \
+        pacman-contrib \
+        pkgfile \
+        rebuild-detector \
+        reflector \
+        paru \
+        accountsservice \
+        bash-completion \
+        ffmpegthumbnailer \
+        gst-libav \
+        gst-plugin-pipewire \
+        gst-plugins-bad \
+        gst-plugins-ugly \
+        libdvdcss \
+        libgsf \
+        libopenraw \
+        mlocate \
+        poppler-glib \
+        xdg-user-dirs \
+        xdg-utils \
+        efitools \
+        haveged \
+        nfs-utils \
+        nilfs-utils \
+        ntp \
+        smartmontools \
+        unrar \
+        unzip \
+        xz \
+        adobe-source-han-sans-cn-fonts \
+        adobe-source-han-sans-jp-fonts \
+        adobe-source-han-sans-kr-fonts \
+        awesome-terminal-fonts \
+        noto-fonts-emoji \
+        noto-color-emoji-fontconfig \
+        cantarell-fonts \
+        freetype2 \
+        noto-fonts \
+        opendesktop-fonts \
+        ttf-bitstream-vera \
+        ttf-dejavu \
+        ttf-liberation \
+        ttf-opensans \
+        ttf-meslo-nerd \
+        noto-fonts-cjk \
+        alsa-firmware \
+        alsa-plugins \
+        alsa-utils \
+        pavucontrol \
+        pipewire-pulse \
+        wireplumber \
+        pipewire-alsa \
+        rtkit \
+        dmidecode \
+        dmraid \
+        hdparm \
+        hwdetect \
+        lsscsi \
+        mtools \
+        sg3_utils \
+        sof-firmware \
+        linux-firmware \
+        cpupower \
+        power-profiles-daemon \
+        upower \
+        alacritty \
+        btop \
+        duf \
+        findutils \
+        fsarchiver \
+        git \
+        glances \
+        hwinfo \
+        inxi \
+        meld \
+        nano-syntax-highlighting \
+        fastfetch \
+        pv \
+        python-defusedxml \
+        python-packaging \
+        rsync \
+        sed \
+        vi \
+        wget \
+        ripgrep \
+        micro \
+        nano \
+        vim \
+        openssh && \
+    pacman -S --clean --noconfirm
 
 # kde plasma (for handhelds!) and some necessary packages of cachyos handheld edition
 # it pulls big steam bootstrap automatically so I don't need to worry about it at all
-RUN pacman -Sy --needed --noconfirm cachyos-nord-kde-theme-git cachyos-iridescent-kde cachyos-emerald-kde-theme-git cachyos-themes-sddm cachyos-handheld v4l-utils plasma-keyboard ark bluedevil breeze-gtk char-white dolphin egl-wayland gwenview konsole kate kdeconnect kde-gtk-config kdegraphics-thumbnailers kdeplasma-addons ffmpegthumbs kinfocenter kscreen kwallet-pam kwalletmanager plasma-desktop libplasma plasma-nm plasma-pa plasma-workspace plasma-integration plasma-firewall plasma-browser-integration plasma-systemmonitor plasma-thunderbolt powerdevil spectacle sddm sddm-kcm qt6-wayland xsettingsd xdg-desktop-portal xdg-desktop-portal-kde phonon-qt6-vlc && pacman -S --clean --noconfirm
+RUN --mount=type=tmpfs,dst=/run \
+    pacman -Sy --needed --noconfirm cachyos-nord-kde-theme-git \
+        cachyos-iridescent-kde \
+        cachyos-emerald-kde-theme-git \
+        cachyos-themes-sddm \
+        cachyos-handheld \
+        v4l-utils \
+        plasma-keyboard \
+        ark \
+        bluedevil \
+        breeze-gtk \
+        char-white \
+        dolphin \
+        egl-wayland \
+        gwenview \
+        konsole \
+        kate \
+        kdeconnect \
+        kde-gtk-config \
+        kdegraphics-thumbnailers \
+        kdeplasma-addons \
+        ffmpegthumbs \
+        kinfocenter \
+        kscreen \
+        kwallet-pam \
+        kwalletmanager \
+        plasma-desktop \
+        libplasma \
+        plasma-nm \
+        plasma-pa \
+        plasma-workspace \
+        plasma-integration \
+        plasma-firewall \
+        plasma-browser-integration \
+        plasma-systemmonitor \
+        plasma-thunderbolt \
+        powerdevil \
+        spectacle \
+        sddm \
+        sddm-kcm \
+        qt6-wayland \ 
+        xsettingsd \
+        xdg-desktop-portal \
+        xdg-desktop-portal-kde \
+        phonon-qt6-vlc && \
+    pacman -S --clean --noconfirm
 
 # cpu firmware and accessibility tools
-RUN pacman -Sy --needed --noconfirm amd-ucode intel-ucode espeak-ng mousetweaks orca && pacman -S --clean --noconfirm
+RUN --mount=type=tmpfs,dst=/run \
+    pacman -Sy --needed --noconfirm amd-ucode \
+        intel-ucode \
+        espeak-ng \
+        mousetweaks \
+        orca && \
+    pacman -S --clean --noconfirm
 
 # missing in cachyos' selection of packages
-RUN pacman -Sy --needed --noconfirm sudo flatpak discover fwupd distrobox podman && pacman -S --clean --noconfirm
+RUN --mount=type=tmpfs,dst=/run \
+    pacman -Sy --needed --noconfirm sudo \
+        flatpak \
+        discover \
+        fwupd \
+        distrobox \
+        podman && \
+    pacman -S --clean --noconfirm
 
 # replace system updater for gaming mode
 COPY files/usr/bin /usr/bin
@@ -90,7 +293,8 @@ RUN systemctl enable NetworkManager.service && \
     systemctl --global enable cachyos-gamescope-autologin.service
 
 # https://github.com/bootc-dev/bootc/issues/1801
-RUN printf "systemdsystemconfdir=/etc/systemd/system\nsystemdsystemunitdir=/usr/lib/systemd/system\n" | tee /usr/lib/dracut/dracut.conf.d/30-bootcrew-fix-bootc-module.conf && \
+RUN --mount=type=tmpfs,dst=/run \
+    printf "systemdsystemconfdir=/etc/systemd/system\nsystemdsystemunitdir=/usr/lib/systemd/system\n" | tee /usr/lib/dracut/dracut.conf.d/30-bootcrew-fix-bootc-module.conf && \
     printf 'reproducible=yes\nhostonly=no\ncompress=zstd\nadd_dracutmodules+=" ostree bootc "' | tee "/usr/lib/dracut/dracut.conf.d/30-bootcrew-bootc-container-build.conf" && \
     dracut --force "$(find /usr/lib/modules -maxdepth 1 -type d | grep -v -E "*.img" | tail -n 1)/initramfs.img"
 

@@ -1,0 +1,3 @@
+docker:
+  ghcr.io/ripps818:
+    use-sigstore-attachments: true

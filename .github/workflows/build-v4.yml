@@ -1,5 +1,5 @@
 ---
-name: Build container image
+name: Build container image (v4)
 on:
   pull_request:
    branches:
@@ -14,20 +14,20 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_DESC: "CachyOS Handheld edition Bootc image"
+  IMAGE_DESC: "BoppOS CachyOS Bootc image (v4)"
   IMAGE_KEYWORDS: "bootc,arch,cachyos"
   IMAGE_LOGO_URL: "https://avatars.githubusercontent.com/u/10499845?s=200&v=4"
   IMAGE_NAME: "${{ github.event.repository.name }}"
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
-  DEFAULT_TAG: "latest"
+  DEFAULT_TAG: "v4"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.brand_name}}-${{ inputs.stream_name }}
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   build_push:
-    name: Build and push image
+    name: Build and push image (v4)
     runs-on: ubuntu-24.04
 
     permissions:
@@ -42,10 +42,20 @@ jobs:
           echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
           echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
 
+      - name: Check Compatibility (v4)
+        run: |
+          # Check for x86-64-v4 support (AVX512F is a good proxy for v4 base)
+          if ! grep -q avx512f /proc/cpuinfo; then
+            echo "::warning::Runner CPU does not support x86-64-v4 (AVX512F missing). Skipping build."
+            echo "SKIP_BUILD=true" >> $GITHUB_ENV
+          fi
+
       - name: Checkout
+        if: env.SKIP_BUILD != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Free disk space
+        if: env.SKIP_BUILD != 'true'
         uses: hastd/free-disk-space@68572aeaadb7f76bd408246328e95926323402b5 # v0.1.2
 
       - name: Get current date
@@ -59,12 +69,12 @@ jobs:
 
       - name: Image Metadata
         uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        if: env.SKIP_BUILD != 'true'
         id: metadata
         with:
           tags: |
             type=raw,value=${{ env.DEFAULT_TAG }}
-            type=raw,value=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
-            type=raw,value={{date 'YYYYMMDD'}}
+            type=raw,value=${{ env.DEFAULT_TAG }}-{{date 'YYYYMMDD'}}
             type=sha,enable=${{ github.event_name == 'pull_request' }}
             type=ref,event=pr
           labels: |
@@ -88,6 +98,7 @@ jobs:
 
       - name: Build Image
         id: build_image
+        if: env.SKIP_BUILD != 'true'
         env:
           META_LABELS: ${{ steps.metadata.outputs.labels }}
         run: |
@@ -100,9 +111,10 @@ jobs:
           fi
           done <<< "$META_LABELS"
 
-          sudo podman build "${BUILD_ARGS[@]}" --tag "$IMAGE_NAME:$DEFAULT_TAG" .
+          sudo podman build "${BUILD_ARGS[@]}" --build-arg TARGET_CPU_MARCH="v4" --tag "$IMAGE_NAME:$DEFAULT_TAG" .
 
       - name: Rechunk Image
+        if: env.SKIP_BUILD != 'true'
         run: |
           set -xeuo pipefail
 
@@ -119,11 +131,11 @@ jobs:
       # needed because old podman doesn't push layer annotations for
       # the rechunker at all
       - name: Install Podman from Brew
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: env.SKIP_BUILD != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         run: /home/linuxbrew/.linuxbrew/bin/brew install podman || exit 1
 
       - name: Login to GitHub Container Registry
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: env.SKIP_BUILD != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOGIN_USER: ${{ github.actor }}
@@ -132,7 +144,7 @@ jobs:
           echo "${GITHUB_TOKEN}" | docker login -u "${LOGIN_USER}" --password-stdin "ghcr.io" # For cosign
 
       - name: Push to GHCR
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: env.SKIP_BUILD != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         id: push
         env:
           IMAGE_REGISTRY: ${{ env.IMAGE_REGISTRY }}
@@ -154,10 +166,10 @@ jobs:
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: env.SKIP_BUILD != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
 
       - name: Sign container image
-        if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: env.SKIP_BUILD != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         run: cosign sign -y --new-bundle-format=false --use-signing-config=false --key env://COSIGN_PRIVATE_KEY "${IMAGE_REGISTRY}/${IMAGE_NAME}@${REMOTE_IMAGE_DIGEST}"
         env:
           REMOTE_IMAGE_DIGEST: ${{ steps.push.outputs.remote_image_digest }}

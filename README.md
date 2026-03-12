@@ -1,53 +1,90 @@
-# CachyOS Handheld edition Bootc
+# BoppOS CachyOS 🚀
 
-<img width="1280" height="800" alt="Screenshot" src="https://github.com/user-attachments/assets/b763b8a2-cbc1-44ff-ac60-b7788d424363" />
+**A high-performance, desktop-focused atomic (bootc) Linux image based on CachyOS.**
 
-[CachyOS](https://cachyos.org/) Deckify branch repackaged as [bootc](https://bootc-dev.github.io/) image. Yep, it works. Yes, I already tried it on Steam Deck. However there's still some rough edges that this README would go into...
+BoppOS CachyOS is a custom-built OS designed for high-end desktop gaming and development. It's a fork of `cachyos-deckify-bootc`, transformed from a handheld-oriented system into a powerful, desktop-first experience.
 
-Package list is taken from https://github.com/CachyOS/cachyos-calamares/blob/cachyos-deckify-qt6/src/modules/netinstall/netinstall.yaml, some packages are already doing what's needed like downloading Steam Bootstrap directly from SteamOS repository to use without an internet for a bit (just like on SteamOS!).
+---
 
-Some packages (like Firefox) are excluded from the system while providing alternative methods for getting them like Flatpak and Distrobox. You can still use `pacman` though, but you'd need to run `sudo bootc usroverlay` first (those changes would be lost after reboot/shutdown).
+## Key Features
 
-TODO: possibly migrate to mkosi
+- **High-Performance Base**: Built on [CachyOS](https://cachyos.org/), an Arch-based distribution with performance-tuned kernels and repositories.
+- **Atomic & Immutable**: Uses [bootc](https://bootc-dev.github.io/) for an atomic, image-based system that offers incredible stability and easy rollbacks.
+- **Desktop Optimized**: Stripped of all handheld UI elements and optimized for a traditional desktop experience with KDE Plasma.
+- **Modern Hardware Support**: Includes build-time support for `znver4` CPU optimizations for AMD Ryzen 7000 series processors.
+- **Gaming Ready**: Comes with a suite of pre-installed gaming software and utilities:
+  - `cachyos-gaming-applications`, `proton-cachyos`, `wine-cachyos`
+  - `sunshine`, `mangohud`, `goverlay`, `lact`
+  - `faugus-launcher`, `umu-launcher`, `winboat`
+- **Developer Focused**: Includes essential development tools out of the box:
+  - `docker` & `docker-compose`
+  - `nodejs`, `npm`, `rust`, `python-pip`, `python-pipx`
+  - `visual-studio-code-bin`
+- **Enhanced Shell**: A pre-configured shell environment with `starship`, `zoxide`, and `eza` for a modern terminal experience.
 
-## Known issues
+## Build Instructions
 
-- Image is rechunked with new tool [chunkah](https://github.com/coreos/chunkah), however it's highly experimental and it suffers from [uneven distribution of layers](https://github.com/coreos/chunkah/issues/66) compared to rpm-ostree's [`build-chunked-oci`](https://coreos.github.io/rpm-ostree/build-chunked-oci) function which, you guessed it, can be only used in RPM-based distros, hence is why I chose 256 layers instead of previously picked 96. I would still prefer this over one large layer...
-- Speaking of rechunking, bootc (while using its composefs backend, didn't tried it with ostree) seems to not respect already existing layers on the system making you to redownload it all over again. 
-- It doesn't boot into Steam Gaming Mode! Bummer, but I believe it's really easy to solve, maybe I'm just missing something. Steam in desktop mode should work tho as seen in screenshot
-- It still identifies itself as Arch Linux
-- Even if Homebrew is unpacked properly in live system, it doesn't put itself to $PATH
-- While mounting external media works, /run mounts them in a way that you can't write to it
+You can build the BoppOS image using any container tool like `podman` or `docker`.
 
-## Build
+### Standard Build (v3 Generic)
 
-### How to build it (and use it)
-
-Uncomment some commands in `Containerfile` after `Setup a temporary root passwd (changeme) for dev purposes`, then run this command:
-
-```bash
-just build-containerfile
-```
-
-After it's done you can run this command to generate bootable image:
-
-```bash
-just generate-bootable-image
-```
-
-You'll get `bootable.img` ready to be used, don't forget to enable EFI support in VM of your choice. Create a new account as usual:
+This build is compatible with most modern x86-64 hardware and is suitable for sharing or for use in CI/CD environments.
 
 ```bash
-useradd -m -G wheel -s /bin/bash user
+podman build -t boppos-cachyos:latest .
 ```
 
-Then if you'd like to then switch to hosted OCI image so you can do `sudo bootc update` later on:
+### v4 Build (x86-64-v4)
+
+This enables optimizations for a wide range of modern CPUs (e.g., Intel Haswell and newer, AMD Excavator and newer) that support the x86-64-v4 microarchitecture level.
 
 ```bash
-sudo bootc switch --enforce-container-sigpolicy ghcr.io/lumaeris/cachyos-deckify-bootc:latest
+podman build --build-arg TARGET_CPU_MARCH=v4 -t boppos-cachyos-v4:latest .
 ```
 
-## Thanks to...
+### Optimized Build (znver4)
 
-- [Bootcrew](https://github.com/bootcrew) contributors for making [Arch-Bootc](https://github.com/bootcrew/arch-bootc) a reality, which this repo is mostly based on
-- [Hec](https://github.com/hecknt) for providing [libalpm/pacman hook](files/usr/share/libalpm/hooks/assign-usercomponent.hook) ([script itself](files/usr/libexec/assign-usercomponent.sh)) for assigning packages as `user.component` for chunkah, [a unique way of bootstraping Arch](https://github.com/hecknt/archlinux-bootc/blob/5d1f578837ef8c4d1418ed7490a43a613b1a5d04/Containerfile#L1-L18) instead of using Arch Docker image and prebuilt [Bootc package](https://github.com/hecknt/arch-bootc-pkgs)
+If you are building on and for a system with an AMD Ryzen 7000 series CPU (or newer), you can enable native `znver4` optimizations for maximum performance.
+
+```bash
+podman build --build-arg TARGET_CPU_MARCH=znver4 -t boppos-cachyos-znver4:latest .
+```
+
+## Installation & Switching
+
+This image is designed to be managed by `bootc`. You can either perform a fresh installation on a new system or switch an existing `bootc`-based OS to BoppOS without losing your data.
+
+### Fresh Installation
+
+After building the container image, you can:
+
+1.  Push it to a container registry (like `ghcr.io`, `quay.io`, or a local registry).
+2.  Use `bootc install` from a live environment to install BoppOS to a target disk.
+
+For detailed installation instructions, refer to the [official bootc documentation](https://bootc-dev.github.io/book/installation.html).
+
+A typical installation command would look like this:
+
+```bash
+# Example:
+bootc install to-disk --image your-registry/boppos-cachyos:latest /dev/sdX
+```
+
+### Switching from an Existing bootc OS (e.g., Bazzite)
+
+If you are already running a `bootc`-based system, you can switch to BoppOS directly without needing to reformat or reinstall. This is one of the major advantages of `bootc`.
+
+To switch, run the following command, pointing to the BoppOS image in your registry:
+
+```bash
+sudo bootc switch your-registry/boppos-cachyos:latest
+```
+
+Your system will download the new image and stage it for the next boot.
+
+**Note on Signature Verification**: For a secure transition, you may need to configure your system to trust the signature of the new image. The `Containerfile` includes a `cosign.pub` key and `policy.json`, which you may need to adapt for your registry and signing setup.
+
+
+## Acknowledgements
+
+This project was made possible by the excellent work of the CachyOS team and the creators of the original [cachyos-deckify-bootc](https://github.com/lumaeris/cachyos-deckify-bootc) repository from which this was forked. It also stands on the shoulders of the [Bootcrew](https://github.com/bootcrew) and [bootc](https://github.com/containers/bootc) projects.

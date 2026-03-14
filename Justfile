@@ -31,25 +31,18 @@ rechunk arch='v3':
 # Push the built image(s) to the container registry.
 push arch='v3': (rechunk arch)
     @echo "Pushing {{full_image}}:{{arch}}..."
+    set -euo pipefail
     sudo podman push \
+        --authfile /etc/containers/auth.json \
         --digestfile=/tmp/podman_push_digest_{{arch}}.txt \
+        --compression-format=zstd \
         "{{full_image}}:{{arch}}"
 
 # Sign the published image using cosign. Defaults to cosign.key in the current directory unless COSIGN_PRIVATE_KEY is exported.
 sign arch='v3':
-    @echo "Signing {{full_image}}:{{arch}}..."
-    @if [ -n "$COSIGN_PRIVATE_KEY" ]; then \
-        KEY_ARG="--key env://COSIGN_PRIVATE_KEY"; \
-        echo "Using COSIGN_PRIVATE_KEY from environment."; \
-    elif [ -f "cosign.key" ]; then \
-        KEY_ARG="--key cosign.key"; \
-        echo "Using local cosign.key file."; \
-    else \
-        echo "Error: COSIGN_PRIVATE_KEY environment variable is not set and cosign.key is missing."; \
-        exit 1; \
-    fi; \
-    DIGEST=$(cat /tmp/podman_push_digest_{{arch}}.txt) && \
-    cosign sign -y --new-bundle-format=false --use-signing-config=false $KEY_ARG "{{full_image}}@$$DIGEST"
+    @# The signing logic is complex and has shell escaping issues within Just.
+    @# Moving it to a dedicated script makes it more robust and maintainable.
+    @./scripts/sign.sh "{{full_image}}" "{{arch}}"
 
 switch tag='v3':
     @echo "Switching system to {{full_image}}:{{tag}}..."

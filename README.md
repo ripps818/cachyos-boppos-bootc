@@ -1,8 +1,8 @@
-# BoppOS CachyOS 🚀
+# CachyOS BoppOS 🚀
 
-**A high-performance, desktop-focused atomic (bootc) Linux image based on CachyOS.**
+**A high-performance, desktop-focused atomic (`bootc`) Linux image based on CachyOS.**
 
-BoppOS CachyOS is a custom-built OS designed for high-end desktop gaming and development. It's a fork of `cachyos-deckify-bootc`, transformed from a handheld-oriented system into a powerful, desktop-first experience.
+CachyOS BoppOS is a custom-built OS designed for high-end desktop gaming and development. It's a fork of `cachyos-deckify-bootc`, transformed from a handheld-oriented system into a powerful, desktop-first experience.
 
 This is all very experimental. So use at your own risk.
 
@@ -26,7 +26,7 @@ This is all very experimental. So use at your own risk.
 
 ## Build Instructions
 
-You can build the BoppOS image using any container tool like `podman` or `docker`.
+You can build the CachyOS BoppOS image using any container tool like `podman` or `docker`.
 
 ### Standard Build (v3 Generic)
 
@@ -61,7 +61,7 @@ This image is designed to be managed by `bootc`. You can either perform a fresh 
 After building the container image, you can:
 
 1.  Push it to a container registry (like `ghcr.io`, `quay.io`, or a local registry).
-2.  Use `bootc install` from a live environment to install BoppOS to a target disk.
+2.  Use `bootc install` from a live environment to install CachyOS BoppOS to a target disk.
 
 For detailed installation instructions, refer to the [official bootc documentation](https://bootc-dev.github.io/book/installation.html).
 

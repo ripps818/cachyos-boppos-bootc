@@ -1,0 +1,23 @@
+# Added by CachyOS BoppOS build process
+if [ -x "/home/linuxbrew/.linuxbrew/bin/brew" ]; then
+    eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+elif [ -x "/var/home/linuxbrew/.linuxbrew/bin/brew" ]; then
+    eval "$(/var/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+fi
+
+# Atuin - Enhanced shell history
+if command -v atuin &> /dev/null; then
+    eval "$(atuin init zsh)"
+fi
+
+# Starship prompt
+if command -v starship &> /dev/null; then
+    eval "$(starship init zsh)"
+fi
+
+# Zoxide navigation
+if command -v zoxide &> /dev/null; then
+    eval "$(zoxide init zsh)"
+fi
+
+alias ls='eza --icons'

@@ -7,7 +7,6 @@ flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flath
 flatpak install --user -y flathub \
     net.mullvad.MullvadBrowser \
     com.calibre_ebook.calibre \
-    org.kde.kate \
     org.kde.okular \
     org.inkscape.Inkscape \
     org.videolan.VLC \

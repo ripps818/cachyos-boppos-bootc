@@ -6,7 +6,7 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}Starting BoppOS System Update...${NC}\n"
+echo -e "${BLUE}Starting CachyOS BoppOS System Update...${NC}\n"
 
 # 1. Update bootc deployment (OS update)
 echo -e "${GREEN}==> Updating OS image (bootc)...${NC}"
@@ -44,5 +44,5 @@ else
     echo "Homebrew not found, skipping."
 fi
 
-echo -e "\n${BLUE}BoppOS update complete!${NC}"
+echo -e "\n${BLUE}CachyOS BoppOS update complete!${NC}"
 echo "Note: If the OS was updated via bootc, please reboot to apply the changes."

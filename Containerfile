@@ -129,8 +129,9 @@ RUN --mount=type=tmpfs,dst=/run \
     pacman -Sy --noconfirm --needed \
         # --- System Core ---
         linux-cachyos linux-cachyos-headers systemd systemd-sysvcompat \
-        dbus dbus-broker-units dbus-glib glib2 polkit shadow lua-luv \
+        dbus dbus-broker-units dbus-glib glib2 polkit shadow lua-luv fuse2 fusef2s \
         dracut ostree bootc skopeo amd-ucode intel-ucode linux-firmware sof-firmware \
+        libdisplay-info lib32-libdisplay-info \
         # --- Graphics & Drivers ---
         mesa lib32-mesa mesa-utils vulkan-icd-loader vulkan-radeon lib32-vulkan-radeon vulkan-tools \
         # --- Desktop Environment & Display Manager ---
@@ -139,7 +140,7 @@ RUN --mount=type=tmpfs,dst=/run \
         cachyos-plymouth-bootanimation dolphin konsole sddm sddm-kcm cachyos-themes-sddm \
         powerdevil kscreen kdeconnect ark ffmpegthumbnailer \
         polkit polkit-kde-agent kwallet-pam udisks2 ptyxis \
-        xdg-desktop-portal xdg-desktop-portal-kde \
+        xdg-desktop-portal xdg-desktop-portal-kde kate python-gobject \
         ffmpegthumbs kdegraphics-thumbnailers kimageformats qt6-imageformats \
         kio-extras kio-fuse kio-admin kde-gtk-config colord-kde \
         flatpak-kcm partitionmanager plasma-disks plasma-systemmonitor spectacle \
@@ -157,13 +158,13 @@ RUN --mount=type=tmpfs,dst=/run \
         inputplumber lsfg-vk game-devices-udev udev-joystick-blacklist-git waydroid \
         # --- Shells & Prompts ---
         bash zsh fish bash-preexec bash-completion zsh-completions \
-        starship zoxide eza iotop-c smartmontools \
+        atuin starship zoxide eza iotop-c smartmontools \
         # --- Development Base & CLI Tools ---
         base-devel meld procps-ng curl file git github-cli ripgrep fd fzf jq man-db man-pages \
-        byobu openssh openssl wget paru just \
+        byobu openssh openssl wget paru just cosign \
         nano micro vi unrar unzip xz nfs-utils btop konsave \
         # --- Languages & IDEs ---
-        nodejs npm rust python-pip python-pipx \
+        nodejs npm rust gcc-go python-pip python-pipx \
         cargo-binstall cargo-update visual-studio-code-bin \
         # --- Networking & VPNs ---
         networkmanager networkmanager-openvpn wpa_supplicant iwd ethtool dnsutils \
@@ -209,9 +210,6 @@ RUN chmod 4755 \
     /usr/bin/umount \
     /usr/bin/fusermount3
 
-# Configure shell environment
-RUN /usr/libexec/3-shell-config.sh
-
 RUN systemd-sysusers
 
 # Disable SELinux labeling in Podman
@@ -227,12 +225,12 @@ RUN systemctl enable NetworkManager.service && \
     systemctl enable ananicy-cpp.service && \
     systemctl enable scx_loader.service && \
     systemctl enable inputplumber.service && \
-    systemctl enable brew-setup.service &&\
+    systemctl enable cachyos-boppos-brew-setup.service &&\
     systemctl enable docker.service && \
     systemctl enable sddm.service && \
     systemctl enable usr-share-sddm-themes.mount && \
     systemctl enable var-opt.mount && \
-    systemctl --global enable install-flatpaks.service
+    systemctl --global enable cachyos-boppos-install-flatpaks.service
 
 # Bootc / Dracut Fixes
 RUN --mount=type=tmpfs,dst=/run \

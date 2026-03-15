@@ -274,7 +274,7 @@ RUN ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime
 
 # Add repository security keys
 RUN mkdir -p /etc/pki/containers
-COPY cosign.pub /etc/pki/containers/boppos.pub
+COPY cosign.pub /etc/pki/containers/ripps818.pub
 
 RUN rm -f /README.md
 LABEL containers.bootc=1

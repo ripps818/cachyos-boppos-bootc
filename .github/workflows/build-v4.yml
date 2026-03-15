@@ -33,20 +33,17 @@ jobs:
           echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
 
       - name: Check Compatibility (v4)
+        id: check_compatibility # Added ID to the step
         run: |
           # Check for x86-64-v4 support (AVX512F is a good proxy for v4 base)
           if ! grep -q avx512f /proc/cpuinfo; then
             echo "::warning::Runner CPU does not support x86-64-v4 (AVX512F missing). Skipping build."
-            echo "SKIP_BUILD=true" >> $GITHUB_ENV
+            echo "should_skip=true" >> $GITHUB_OUTPUT # Set an output variable
           fi
 
       - name: Checkout
-        if: env.SKIP_BUILD != 'true'
+        if: steps.check_compatibility.outputs.should_skip != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-    #   - name: Free disk space
-    #     if: env.SKIP_BUILD != 'true'
-    #     uses: hastd/free-disk-space@68572aeaadb7f76bd408246328e95926323402b5 # v0.1.2
 
       - name: Get current date
         id: date
@@ -59,7 +56,7 @@ jobs:
 
       - name: Image Metadata
         uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
-        if: env.SKIP_BUILD != 'true'
+        if: steps.check_compatibility.outputs.should_skip != 'true'
         id: metadata
         with:
           tags: |
@@ -87,6 +84,7 @@ jobs:
           sep-annotations: " "
 
       - name: Strip Local Cache Mount
+        if: steps.check_compatibility.outputs.should_skip != 'true'
         run: |
           sed -i 's|--mount=type=cache,id=boppos-builder-cache-${TARGET_CPU_MARCH},target=/var/cache/pacman/pkg||g' Containerfile
 
@@ -94,6 +92,7 @@ jobs:
         id: build_image
         env:
           META_LABELS: ${{ steps.metadata.outputs.labels }}
+        if: steps.check_compatibility.outputs.should_skip != 'true' # Added if condition
         run: |
           set -x
 
@@ -120,7 +119,7 @@ jobs:
             --tag "$IMAGE_NAME:$DEFAULT_TAG" .
 
       - name: Rechunk Image
-        if: env.SKIP_BUILD != 'true'
+        if: steps.check_compatibility.outputs.should_skip != 'true'
         run: |
           set -xeuo pipefail
 
@@ -136,12 +135,12 @@ jobs:
       # TODO: remove me when we have a new podman in 26.04 runners
       # needed because old podman doesn't push layer annotations for
       # the rechunker at all
-      - name: Install Podman from Brew
-        if: env.SKIP_BUILD != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      - name: Install Podman from Brew 
+        if: steps.check_compatibility.outputs.should_skip != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         run: /home/linuxbrew/.linuxbrew/bin/brew install podman || exit 1
 
       - name: Login to GitHub Container Registry
-        if: env.SKIP_BUILD != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: steps.check_compatibility.outputs.should_skip != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOGIN_USER: ${{ github.actor }}
@@ -150,7 +149,7 @@ jobs:
           echo "${GITHUB_TOKEN}" | docker login -u "${LOGIN_USER}" --password-stdin "ghcr.io" # For cosign
 
       - name: Push to GHCR
-        if: env.SKIP_BUILD != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: steps.check_compatibility.outputs.should_skip != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         id: push
         env:
           IMAGE_REGISTRY: ${{ env.IMAGE_REGISTRY }}
@@ -172,10 +171,10 @@ jobs:
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
-        if: env.SKIP_BUILD != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: steps.check_compatibility.outputs.should_skip != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
 
       - name: Sign container image
-        if: env.SKIP_BUILD != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        if: steps.check_compatibility.outputs.should_skip != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         run: cosign sign -y --new-bundle-format=false --use-signing-config=false --key env://COSIGN_PRIVATE_KEY "${IMAGE_REGISTRY}/${IMAGE_NAME}@${REMOTE_IMAGE_DIGEST}"
         env:
           REMOTE_IMAGE_DIGEST: ${{ steps.push.outputs.remote_image_digest }}

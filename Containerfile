@@ -169,7 +169,8 @@ RUN --mount=type=tmpfs,dst=/run \
         # --- Development Base & CLI Tools ---
         base-devel meld procps-ng curl file git github-cli ripgrep fd fzf jq man-db man-pages \
         byobu openssh openssl wget paru just cosign \
-        nano nano-syntax-highlighting micro vi unrar unzip xz nfs-utils btop konsave \
+        nano nano-syntax-highlighting micro vi nfs-utils btop konsave \
+        unp unarj unrar unzip bzip2 p7zip unace cpio sharutils cabextract rpmextract xz \
         # --- Languages & IDEs ---
         nodejs npm rust gcc-go python-pip python-pipx \
         cargo-binstall cargo-update visual-studio-code-bin \

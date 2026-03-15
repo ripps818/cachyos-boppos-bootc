@@ -98,7 +98,7 @@ jobs:
         run: |
           mkdir -p pacman-cache
           # Replace type=cache with type=bind pointing to our restored cache directory
-          sed -i "s|type=cache,target=/usr/lib/sysimage/cache/pacman/pkg|type=bind,source=$(pwd)/pacman-cache,target=/usr/lib/sysimage/cache/pacman/pkg,rw|g" Containerfile
+          sed -i "s|type=cache,id=boppos-builder-cache-\${TARGET_CPU_MARCH},target=/var/cache/pacman/pkg|type=bind,source=$(pwd)/pacman-cache,target=/var/cache/pacman/pkg,rw|g" Containerfile
 
       - name: Build Image
         id: build_image

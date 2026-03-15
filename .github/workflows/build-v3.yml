@@ -38,11 +38,12 @@ jobs:
           echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
 
       - name: Check Compatibility (v3)
+        id: check_compatibility
         run: |
           # Check for x86-64-v3 support (AVX2 is a good proxy for v3 base)
           if ! grep -q avx2 /proc/cpuinfo; then
             echo "::error::Runner CPU does not support x86-64-v3 (AVX2 missing). Failing as requested."
-            exit 1
+            echo "should_skip=true" >> $GITHUB_OUTPUT # Set an output variable
           fi
 
       - name: Checkout
@@ -89,9 +90,12 @@ jobs:
           sep-tags: " "
           sep-annotations: " "
 
-      - name: Strip Local Cache Mount
+      - name: Strip Local Mounts for CI
+        if: steps.check_compatibility.outputs.should_skip != 'true'
         run: |
-          sed -i 's|--mount=type=cache,id=boppos-builder-cache-${TARGET_CPU_MARCH},target=/var/cache/pacman/pkg||g' Containerfile 
+          # Use a regex to universally strip all --mount flags (tmpfs, cache, bind) 
+          # from the Containerfile so it runs safely under --isolation=chroot
+          sed -i 's/--mount=[^ ]* //g' Containerfile
 
       - name: Build Image
         id: build_image

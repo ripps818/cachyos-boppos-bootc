@@ -18,8 +18,22 @@ USER root
 RUN --mount=type=cache,id=boppos-builder-cache-${TARGET_CPU_MARCH},target=/var/cache/pacman/pkg \
     pacman-key --init && \
     pacman-key --populate archlinux cachyos && \
-    pacman -Sy --noconfirm --needed cachyos-keyring archlinux-keyring && \
-    pacman -Sy --noconfirm --needed base-devel git sudo && \
+    pacman-key --recv-keys F3B607488DB35A47 5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB 3056513887B78AEB --keyserver keyserver.ubuntu.com && \
+    pacman-key --lsign-key F3B607488DB35A47 && \
+    pacman-key --lsign-key 5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB && \
+    pacman-key --lsign-key 3056513887B78AEB && \
+    pacman -Sy --noconfirm --needed cachyos-keyring archlinux-keyring cachyos-mirrorlist cachyos-v3-mirrorlist cachyos-v4-mirrorlist cachyos-hooks chwd cachyos-rate-mirrors lsb-release && \
+    pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' && \
+    cachyos-rate-mirrors && \
+    echo -e '\n[bootc]\nSigLevel = Required\nServer=https://github.com/hecknt/arch-bootc-pkgs/releases/download/$repo' >> /etc/pacman.conf && \
+    echo -e '\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist' >> /etc/pacman.conf && \
+    if [ "$TARGET_CPU_MARCH" = "znver4" ]; then \
+        printf "[cachyos-znver4]\nInclude = /etc/pacman.d/cachyos-v4-mirrorlist\n\n[cachyos-core-znver4]\nInclude = /etc/pacman.d/cachyos-v4-mirrorlist\n\n[cachyos-extra-znver4]\nInclude = /etc/pacman.d/cachyos-v4-mirrorlist\n\n" > /tmp/znver4-repos.conf && \
+        awk -v repo_file="/tmp/znver4-repos.conf" '/^#?\[cachyos-v4\]/ && !done { system("cat " repo_file); done=1 } { print }' /etc/pacman.conf > /etc/pacman.conf.tmp && \
+        mv /etc/pacman.conf.tmp /etc/pacman.conf && \
+        rm -f /tmp/znver4-repos.conf ; \
+    fi && \
+    pacman -Syu --noconfirm --needed base-devel git sudo && \
     useradd -m builduser && \
     echo "builduser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
     mkdir -p /home/builduser/packages && \
@@ -41,9 +55,12 @@ RUN --mount=type=cache,id=boppos-builder-cache-${TARGET_CPU_MARCH},target=/var/c
 
 # Build pacman-ostree
 RUN --mount=type=cache,id=boppos-builder-cache-${TARGET_CPU_MARCH},target=/var/cache/pacman/pkg \
+    pacman -Sy --noconfirm --needed ostree rust arch-install-scripts bootc && \
     git clone https://aur.archlinux.org/pacman-ostree.git /tmp/pacman-ostree && \
-    chown -R builduser:builduser /tmp/pacman-ostree && \
     cd /tmp/pacman-ostree && \
+    # Inject the Cargo.toml fix directly into the PKGBUILD so it runs after source extraction
+    sed -i 's/^\([[:space:]]*\)\(cargo .*\)/\1sed -i "s|4.0.3|5.0.0|g" Cargo.toml \&\& cargo update -p alpm \&\& \2/' PKGBUILD && \
+    chown -R builduser:builduser /tmp/pacman-ostree && \
     sudo -u builduser PKGDEST=/home/builduser/packages makepkg --noconfirm -s --skipinteg
 
 # ==========================================
@@ -58,6 +75,10 @@ ENV LANG=en_US.UTF-8
 COPY --from=ghcr.io/ublue-os/brew:latest /system_files /
 RUN setfattr -n user.component -v "homebrew" "/usr/share/homebrew.tar.zst"
 
+# Copy configured pacman environment from aur_builder
+COPY --from=aur_builder /etc/pacman.conf /etc/pacman.conf
+COPY --from=aur_builder /etc/pacman.d /etc/pacman.d
+
 # Ensure the log file exists
 RUN touch /var/log/pacman.log
 
@@ -71,34 +92,10 @@ COPY files/usr/share /usr/share
 COPY files/etc /etc
 COPY files/usr/lib /usr/lib
 
-# Initialize keyrings
-RUN --mount=type=tmpfs,dst=/run \
-    --mount=type=cache,id=boppos-cache-${TARGET_CPU_MARCH},target=/usr/lib/sysimage/cache/pacman/pkg \
-    pacman-key --init && \
-    pacman-key --populate archlinux cachyos && \
-    pacman-key --recv-keys F3B607488DB35A47 --keyserver keyserver.ubuntu.com && \
-    pacman-key --lsign-key F3B607488DB35A47 && \
-    pacman -Sy --noconfirm --needed cachyos-keyring cachyos-mirrorlist cachyos-v3-mirrorlist cachyos-v4-mirrorlist cachyos-hooks chwd cachyos-rate-mirrors lsb-release && \
-    cachyos-rate-mirrors
-
 # Generate en_US.UTF-8 locale
 RUN sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
     locale-gen && \
     echo "LANG=en_US.UTF-8" > /etc/locale.conf
-
-# Add custom Bootc repo
-RUN --mount=type=tmpfs,dst=/run \
-    pacman-key --recv-key 5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB --keyserver keyserver.ubuntu.com && \
-    pacman-key --lsign-key 5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB && \
-    echo -e '[bootc]\nSigLevel = Required\nServer=https://github.com/hecknt/arch-bootc-pkgs/releases/download/$repo' >> /etc/pacman.conf
-
-# Add Chaotic-AUR repository
-RUN --mount=type=tmpfs,dst=/run \
-    --mount=type=cache,id=boppos-cache-${TARGET_CPU_MARCH},target=/usr/lib/sysimage/cache/pacman/pkg \
-    pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com && \
-    pacman-key --lsign-key 3056513887B78AEB && \
-    pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst' && \
-    echo -e "\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist" >> /etc/pacman.conf
 
 # Dracut i18n fix
 RUN mkdir -p /usr/lib/dracut/dracut.conf.d && \
@@ -114,11 +111,7 @@ RUN --mount=type=cache,id=boppos-cache-${TARGET_CPU_MARCH},target=/usr/lib/sysim
     rm -f /usr/lib/sysimage/cache/pacman/pkg/*.part && \
     pacman -Sc --noconfirm && \
     if [ "$TARGET_CPU_MARCH" = "znver4" ]; then \
-        echo "Injecting znver4 repositories for Zen 4/5 optimization..." && \
-        printf "[cachyos-znver4]\nInclude = /etc/pacman.d/cachyos-v4-mirrorlist\n\n[cachyos-core-znver4]\nInclude = /etc/pacman.d/cachyos-v4-mirrorlist\n\n[cachyos-extra-znver4]\nInclude = /etc/pacman.d/cachyos-v4-mirrorlist\n\n" > /tmp/znver4-repos.conf && \
-        awk -v repo_file="/tmp/znver4-repos.conf" '/^#?\[cachyos-v4\]/ && !done { system("cat " repo_file); done=1 } { print }' /etc/pacman.conf > /etc/pacman.conf.tmp && \
-        mv /etc/pacman.conf.tmp /etc/pacman.conf && \
-        rm -f /tmp/znver4-repos.conf && \
+        echo "Architecture $TARGET_CPU_MARCH detected. Reinstalling packages for Zen 4/5 optimization..." && \
         pacman -Syy && \
         # Reinstall all packages using command substitution to avoid pipe-stdin issues
         PKGS=$(pacman -Qqn) && pacman -S --noconfirm $PKGS ; \

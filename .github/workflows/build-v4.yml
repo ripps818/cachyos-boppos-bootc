@@ -122,7 +122,7 @@ jobs:
             --build-arg BASE_IMAGE_TAG="$BASE_TAG" \
             --tag "$IMAGE_NAME:$DEFAULT_TAG" .
 
-        - name: Rechunk Image
+      - name: Rechunk Image
         if: steps.check_compatibility.outputs.should_skip != 'true'
         run: |
           set -xeuo pipefail

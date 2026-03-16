@@ -55,16 +55,6 @@ RUN --mount=type=cache,id=boppos-builder-cache-${TARGET_CPU_MARCH},target=/var/c
     cd /tmp/autofs && \
     sudo -u builduser PKGDEST=/home/builduser/packages makepkg --noconfirm -s --skipinteg
 
-# Build pacman-ostree
-RUN --mount=type=cache,id=boppos-builder-cache-${TARGET_CPU_MARCH},target=/var/cache/pacman/pkg \
-    pacman -Sy --noconfirm --needed ostree rust arch-install-scripts bootc && \
-    git clone https://aur.archlinux.org/pacman-ostree.git /tmp/pacman-ostree && \
-    cd /tmp/pacman-ostree && \
-    # Inject the Cargo.toml fix directly into the PKGBUILD so it runs after source extraction
-    sed -i 's/^\([[:space:]]*\)\(cargo .*\)/\1sed -i "s|4.0.3|5.0.0|g" Cargo.toml \&\& cargo update -p alpm \&\& \2/' PKGBUILD && \
-    chown -R builduser:builduser /tmp/pacman-ostree && \
-    sudo -u builduser PKGDEST=/home/builduser/packages makepkg --noconfirm -s --skipinteg
-
 # ==========================================
 # STAGE 2: System Build
 # ==========================================
@@ -93,6 +83,8 @@ RUN grep "= */var" /etc/pacman.conf | sed "/= *\/var/s/.*=// ; s/ //" | xargs -n
 COPY files/usr/share /usr/share
 COPY files/etc /etc
 COPY files/usr/lib /usr/lib
+COPY files/usr/libexec /usr/libexec
+RUN chmod -R 0755 /usr/libexec
 
 # Generate en_US.UTF-8 locale
 RUN sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
@@ -214,8 +206,7 @@ RUN --mount=type=tmpfs,dst=/run \
 
 # Master copy of custom executables. Overwrites defaults (like steamos-update).
 COPY files/usr/bin /usr/bin
-COPY files/usr/libexec /usr/libexec
-RUN chmod -R 0755 /usr/bin /usr/libexec /usr/share/libalpm/scripts
+RUN chmod -R 0755 /usr/bin /usr/share/libalpm/scripts
 
 # Install AUR packages from Stage 1
 COPY --from=aur_builder /home/builduser/packages/ /tmp/aur-pkgs/

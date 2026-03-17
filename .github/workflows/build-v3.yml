@@ -127,6 +127,7 @@ jobs:
           fi
 
           sudo podman build "${BUILD_ARGS[@]}" \
+            --network=host \
             --build-arg TARGET_CPU_MARCH="$MARCH" \
             --build-arg BASE_IMAGE_TAG="$BASE_TAG" \
             --tag "$IMAGE_NAME:$DEFAULT_TAG" .

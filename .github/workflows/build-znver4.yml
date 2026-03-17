@@ -156,7 +156,7 @@ jobs:
           MONITOR_PID=$!
 
           # Write the chunkah stream to disk to prevent pipe deadlocks and RAM exhaustion
-          sudo podman run --rm --mount=type=image,source=$IMAGE_REF,target=/chunkah \
+          sudo podman run --rm --network=none --mount=type=image,source=$IMAGE_REF,target=/chunkah \
             -e CHUNKAH_CONFIG_STR="$(sudo podman inspect $IMAGE_REF)" \
             quay.io/jlebon/chunkah build --label containers.bootc=1 --max-layers 256 > "$ARCHIVE_PATH"
 

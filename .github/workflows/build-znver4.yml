@@ -52,6 +52,28 @@ jobs:
             echo "should_skip=true" >> $GITHUB_OUTPUT
           fi
 
+      - name: Free Disk Space (Self-Hosted)
+        run: |
+          echo "🧹 Sweeping the runner for free space..."
+          
+          # 1. Clean up APT cache
+          sudo apt-get clean
+          
+          # 2. Nuke leftover /tmp files (Chunkah loves to leave massive tarballs here)
+          sudo rm -rf /tmp/chunked_image.tar /tmp/podman_load_output.txt /tmp/tmp.*
+          
+          # 3. Prune dangling Podman data (keeps your AUR cache, deletes dead layers)
+          sudo podman system prune --force
+          
+          # 4. Wipe the Podman package cache if the manual UI toggle was checked
+          if [ "${{ github.event.inputs.wipe_pkg_cache }}" == "true" ]; then
+            echo "Nuking Podman builder cache mount..."
+            sudo rm -rf /var/lib/containers/storage/volumes/boppos-builder-cache-*
+          fi
+          
+          echo "📊 Disk space after cleanup:"
+          df -h /
+
       - name: Checkout
         if: steps.check_compatibility.outputs.should_skip != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -199,10 +221,28 @@ jobs:
           COSIGN_EXPERIMENTAL: false
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
 
-      - name: Clean workspace
-        if: success() && steps.check_compatibility.outputs.should_skip != 'true'
+      - name: Clean Workspace & Podman Storage
+        if: always()
         run: |
-          # Clean up the _work folder to save space on self-hosted runners, but only on success
-          # so we can investigate failures if needed.
-          sudo rm -rf ${{ github.workspace }}/*
-          sudo rm -rf ${{ github.workspace }}/.[!.]* || true
+          echo "🧹 Sweeping up the heavy Podman assets..."
+          
+          # 1. Obliterate orphaned Podman extraction directories (The 128GB Silent Killer)
+          sudo rm -rf /var/tmp/container_images_* sudo rm -rf /var/tmp/podman*
+          
+          # 2. Delete the massive chunkah tarballs
+          sudo rm -f /tmp/chunked_image.tar /tmp/podman_load_output.txt
+          
+          # 3. Prune dangling (<none>) images from previous builds
+          sudo podman image prune --force
+          
+          # 4. Handle the GitHub workspace based on job status
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✨ Build succeeded. Wiping workspace source files..."
+            sudo rm -rf ${{ github.workspace }}/*
+            sudo rm -rf ${{ github.workspace }}/.[!.]* || true
+          else
+            echo "⚠️ Build failed. Leaving workspace source files intact for debugging."
+          fi
+          
+          echo "📊 Final Disk Space:"
+          df -h /

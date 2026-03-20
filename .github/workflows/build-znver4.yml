@@ -1,4 +1,3 @@
----
 name: Build container image (znver4)
 on:
   workflow_dispatch:
@@ -59,11 +58,12 @@ jobs:
           # 1. Clean up APT cache
           sudo apt-get clean
           
-          # 2. Nuke leftover /tmp files (Chunkah loves to leave massive tarballs here)
-          sudo rm -rf /tmp/chunked_image.tar /tmp/podman_load_output.txt /tmp/tmp.*
+          # 2. Nuke leftover /tmp files and orphaned Podman extraction directories
+          sudo rm -rf /tmp/chunked_image.tar /tmp/podman_load_output.txt /tmp/tmp.* /var/tmp/container_images_* /var/tmp/podman*
           
-          # 3. Prune dangling Podman data (keeps your AUR cache, deletes dead layers)
+          # 3. Prune dangling Podman data AND aggressively wipe the build cache
           sudo podman system prune --force
+          sudo podman builder prune -a -f
           
           # 4. Wipe the Podman package cache if the manual UI toggle was checked
           if [ "${{ github.event.inputs.wipe_pkg_cache }}" == "true" ]; then
@@ -171,6 +171,13 @@ jobs:
             -e CHUNKAH_CONFIG_STR="$(sudo podman inspect $IMAGE_REF)" \
             quay.io/jlebon/chunkah build --label containers.bootc=1 --max-layers 256 > "$ARCHIVE_PATH"
 
+          # THE BATON PASS: Delete the massive unchunked image from Podman!
+          echo "Freeing space: Deleting the original unchunked image from Podman..."
+          sudo podman rmi -f "$IMAGE_REF"
+          
+          # Quick prune to flush the deleted layers from the storage graph
+          sudo podman system prune -f
+
           # Load the completed archive back into podman
           sudo podman load -i "$ARCHIVE_PATH" > /tmp/podman_load_output.txt
           
@@ -227,13 +234,14 @@ jobs:
           echo "🧹 Sweeping up the heavy Podman assets..."
           
           # 1. Obliterate orphaned Podman extraction directories (The 128GB Silent Killer)
-          sudo rm -rf /var/tmp/container_images_* sudo rm -rf /var/tmp/podman*
+          sudo rm -rf /var/tmp/container_images_* /var/tmp/podman*
           
           # 2. Delete the massive chunkah tarballs
           sudo rm -f /tmp/chunked_image.tar /tmp/podman_load_output.txt
           
-          # 3. Prune dangling (<none>) images from previous builds
+          # 3. Prune dangling (<none>) images AND the intermediate build cache
           sudo podman image prune --force
+          sudo podman builder prune -a -f
           
           # 4. Handle the GitHub workspace based on job status
           if [ "${{ job.status }}" == "success" ]; then

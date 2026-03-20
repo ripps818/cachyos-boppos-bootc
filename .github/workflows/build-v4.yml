@@ -1,4 +1,3 @@
----
 name: Build container image (v4)
 on:
   workflow_dispatch:
@@ -59,11 +58,12 @@ jobs:
           # 1. Clean up APT cache
           sudo apt-get clean
           
-          # 2. Nuke leftover /tmp files (Chunkah loves to leave massive tarballs here)
-          sudo rm -rf /tmp/chunked_image.tar /tmp/podman_load_output.txt /tmp/tmp.*
+          # 2. Nuke leftover /tmp files and orphaned Podman extraction directories
+          sudo rm -rf /tmp/chunked_image.tar /tmp/podman_load_output.txt /tmp/tmp.* /var/tmp/container_images_* /var/tmp/podman*
           
-          # 3. Prune dangling Podman data (keeps your AUR cache, deletes dead layers)
+          # 3. Prune dangling Podman data AND aggressively wipe the build cache
           sudo podman system prune --force
+          sudo podman builder prune -a -f
           
           # 4. Wipe the Podman package cache if the manual UI toggle was checked
           if [ "${{ github.event.inputs.wipe_pkg_cache }}" == "true" ]; then
@@ -81,10 +81,7 @@ jobs:
       - name: Get current date
         id: date
         run: |
-          # This generates a timestamp like what is defined on the ArtifactHub documentation
           # E.G: 2022-02-08T15:38:15Z'
-          # https://artifacthub.io/docs/topics/repositories/container-images/
-          # https://linux.die.net/man/1/date
           echo "date=$(date -u +%Y\-%m\-%d\T%H\:%M\:%S\Z)" >> $GITHUB_OUTPUT
 
       - name: Image Metadata
@@ -120,12 +117,10 @@ jobs:
         id: build_image
         env:
           META_LABELS: ${{ steps.metadata.outputs.labels }}
-        if: steps.check_compatibility.outputs.should_skip != 'true' # Added if condition
+        if: steps.check_compatibility.outputs.should_skip != 'true'
         run: |
           set -x
 
-          # Calculate the base image tag. 
-          # If DEFAULT_TAG is znver4, BASE_TAG becomes v4. Otherwise, they match.
           MARCH="${{ env.DEFAULT_TAG }}"
           if [ "$MARCH" == "znver4" ]; then
             BASE_TAG="v4"
@@ -133,20 +128,17 @@ jobs:
             BASE_TAG="$MARCH"
           fi
 
-          # get labels from metadata action
           while IFS= read -r label; do
             if [[ -n "$label" ]]; then
               BUILD_ARGS+=("--label" "$label")
             fi
           done <<< "$META_LABELS"
 
-          # Check if the manual 'no_cache' toggle was checked in the GitHub UI
           if [ "${{ github.event.inputs.no_cache }}" == "true" ]; then
             echo "Manual cache bust triggered. Appending --no-cache..."
             BUILD_ARGS+=("--no-cache")
           fi
 
-          # Check if the manual 'wipe_pkg_cache' toggle was checked in the GitHub UI
           if [ "${{ github.event.inputs.wipe_pkg_cache }}" == "true" ]; then
             echo "Manual wipe package cache triggered. Appending build arg..."
             BUILD_ARGS+=("--build-arg" "WIPE_PKG_CACHE=true")
@@ -166,15 +158,22 @@ jobs:
           IMAGE_REF="localhost/${IMAGE_NAME}:${DEFAULT_TAG}"
           ARCHIVE_PATH="${{ github.workspace }}/rechunked_image.tar"
 
-          # Write the chunkah stream to disk to prevent pipe deadlocks and RAM exhaustion
+          # 1. Write the chunkah stream to disk
           sudo podman run --rm --network=none --mount=type=image,source=$IMAGE_REF,target=/chunkah \
             -e CHUNKAH_CONFIG_STR="$(sudo podman inspect $IMAGE_REF)" \
             quay.io/jlebon/chunkah build --label containers.bootc=1 --max-layers 256 > "$ARCHIVE_PATH"
 
-          # Load the completed archive back into podman
+          # 2. THE BATON PASS: Delete the massive unchunked image from Podman!
+          echo "Freeing space: Deleting the original unchunked image from Podman..."
+          sudo podman rmi -f "$IMAGE_REF"
+          
+          # 3. Quick prune to flush the deleted layers from the storage graph
+          sudo podman system prune -f
+
+          # 4. Load the completed archive back into podman
           sudo podman load -i "$ARCHIVE_PATH" > /tmp/podman_load_output.txt
           
-          # Clean up immediately to save disk space
+          # 5. Clean up immediately to save disk space
           sudo rm -f "$ARCHIVE_PATH"
 
           IMAGE_ID=$(cat /tmp/podman_load_output.txt | grep "Loaded image" | awk '{print $3}')
@@ -187,7 +186,7 @@ jobs:
           LOGIN_USER: ${{ github.actor }}
         run: |
           echo "${GITHUB_TOKEN}" | sudo podman login -u "${LOGIN_USER}" --password-stdin "ghcr.io"
-          echo "${GITHUB_TOKEN}" | docker login -u "${LOGIN_USER}" --password-stdin "ghcr.io" # For cosign
+          echo "${GITHUB_TOKEN}" | docker login -u "${LOGIN_USER}" --password-stdin "ghcr.io"
 
       - name: Push to GHCR
         if: steps.check_compatibility.outputs.should_skip != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
@@ -201,8 +200,6 @@ jobs:
           set -x
           for tag in $IMAGE_TAGS; do
             for i in $(seq "${MAX_RETRIES}"); do
-              # We changed this next line to just use standard 'sudo podman push'
-              # HACK: push twice as a workaround to push rechunk annotations
               sudo podman push --digestfile=/tmp/digestfile "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}" || true
               sudo podman push --digestfile=/tmp/digestfile "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}" && break || sleep $((5 * i));
             done
@@ -227,13 +224,14 @@ jobs:
           echo "🧹 Sweeping up the heavy Podman assets..."
           
           # 1. Obliterate orphaned Podman extraction directories (The 128GB Silent Killer)
-          sudo rm -rf /var/tmp/container_images_* sudo rm -rf /var/tmp/podman*
+          sudo rm -rf /var/tmp/container_images_* /var/tmp/podman*
           
           # 2. Delete the massive chunkah tarballs
           sudo rm -f /tmp/chunked_image.tar /tmp/podman_load_output.txt
           
-          # 3. Prune dangling (<none>) images from previous builds
+          # 3. Prune dangling (<none>) images AND the intermediate build cache
           sudo podman image prune --force
+          sudo podman builder prune -a -f
           
           # 4. Handle the GitHub workspace based on job status
           if [ "${{ job.status }}" == "success" ]; then

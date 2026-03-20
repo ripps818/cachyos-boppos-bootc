@@ -197,7 +197,7 @@ RUN --mount=type=tmpfs,dst=/run \
         # --- Power & Hardware Management ---
         power-profiles-daemon cpupower upower accountsservice rtkit xdg-user-dirs mousetweaks radeontool \
         # --- Audio Core ---
-        pipewire-pulse pipewire-alsa pipewire-jack wireplumber pavucontrol alsa-utils alsa-plugins pulseaudio-bluetooth \
+        pipewire-pulse pipewire-alsa pipewire-jack wireplumber pavucontrol alsa-utils alsa-plugins \
         # --- Gaming Core & Utilities ---
         xorg-xwininfo xdotool yad winboat proton-cachyos wine gamescope-session-git \
         sunshine lact coolercontrol openrgb openrgb-plugin-effects-git nvtop \
@@ -207,7 +207,7 @@ RUN --mount=type=tmpfs,dst=/run \
         bash zsh fish bash-preexec bash-completion zsh-completions oh-my-zsh-git \
         atuin starship \
         # --- Modern CLI Tools & Utilities ---
-        zoxide eza tldr ripgrep fd fzf jq btop iotop-c konsave byobu \
+        zoxide eza ripgrep tealdeer fd fzf jq btop iotop-c konsave byobu \
         conky sysstat htop neofetch glances procs bottom rsync rclone \
         # --- System & Network Utilities ---
         procps-ng curl wget file man-db man-pages openssh openssl \

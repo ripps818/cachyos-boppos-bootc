@@ -206,7 +206,7 @@ RUN --mount=type=tmpfs,dst=/run \
         atuin starship \
         # --- Modern CLI Tools & Utilities ---
         zoxide eza tldr ripgrep fd fzf jq btop iotop-c konsave byobu \
-        conky ssystat htop neofetch glances procs bottom rsync rclone \
+        conky sysstat htop neofetch glances procs bottom rsync rclone \
         # --- System & Network Utilities ---
         procps-ng curl wget file man-db man-pages openssh openssl \
         nfs-utils smartmontools \

@@ -193,8 +193,7 @@ jobs:
           set -x
           for tag in $IMAGE_TAGS; do
             for i in $(seq "${MAX_RETRIES}"); do
-              # HACK: push twice as a workaround to push rechunk annotations
-              sudo podman push --digestfile=/tmp/digestfile "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}" || true
+              # sudo podman push --digestfile=/tmp/digestfile "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}" || true
               sudo podman push --digestfile=/tmp/digestfile "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}" && break || sleep $((5 * i));
             done
           done

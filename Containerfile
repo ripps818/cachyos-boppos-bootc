@@ -194,8 +194,8 @@ RUN --mount=type=tmpfs,dst=/run \
         # --- Printing & Scanning ---
         cups cups-pdf system-config-printer sane \
         # --- Fonts & Themes ---
-        ttf-ms-fonts ttf-dejavu ttf-bitstream-vera ttf-nerd-fonts-symbols noto-fonts-emoji noto-fonts-cjk \
-        ttf-jetbrains-mono ttf-fira-code ttf-cascadia-code ttf-firacode-nerd ttf-meslo-nerd ttf-liberation \
+        ttf-ms-fonts ttf-dejavu ttf-bitstream-vera ttf-nerd-fonts-symbols \
+        noto-color-emoji-fontconfig noto-fonts-emoji noto-fonts-cjk nerd-fonts \
         # --- Power & Hardware Management ---
         power-profiles-daemon cpupower upower accountsservice rtkit xdg-user-dirs mousetweaks radeontool \
         # --- Audio Core ---

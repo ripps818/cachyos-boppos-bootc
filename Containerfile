@@ -68,6 +68,8 @@ RUN --mount=type=cache,id=boppos-builder-cache-${TARGET_CPU_MARCH},target=/var/c
 # ==========================================
 # STAGE 2: System Build
 # ==========================================
+FROM ghcr.io/ublue-os/brew:latest AS brew
+
 FROM docker.io/cachyos/cachyos-${BASE_IMAGE_TAG} AS system
 ARG TARGET_CPU_MARCH
 ARG BASE_IMAGE_TAG
@@ -82,7 +84,7 @@ RUN --mount=type=cache,id=boppos-cache-${TARGET_CPU_MARCH},target=/usr/lib/sysim
     fi
 
 # Copy Homebrew
-COPY --from=ghcr.io/ublue-os/brew:latest /system_files /
+COPY --from=brew /system_files /
 RUN setfattr -n user.component -v "homebrew" "/usr/share/homebrew.tar.zst"
 
 # Copy configured pacman environment from aur_builder

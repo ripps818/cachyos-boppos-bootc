@@ -1,0 +1,33 @@
+# BoppOS Containerfile.niri
+#
+# Desktop overlay containing the Niri Wayland Compositor, gaming utilities, and developer tools.
+
+ARG BASE_IMAGE_TAG=latest
+FROM ghcr.io/ripps818/cachyos-boppos-base:${BASE_IMAGE_TAG}
+
+# ==========================================
+# MASTER PACKAGE INSTALLATION
+# ==========================================
+RUN pacman -Sy --noconfirm --needed \
+    # --- Desktop Environment (Niri) Core ---
+    niri cachyos-niri-settings waybar swaybg fuzzel alacritty xorg-xwayland \
+    xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk \
+    polkit-gnome greetd greetd-tuigreet mako && \
+    # --- Cleanup ---
+    rm -rf /usr/lib/sysimage/cache/pacman/pkg/*
+
+# Configure greetd to start Niri via tuigreet
+RUN mkdir -p /etc/greetd && \
+    sed -i 's/^command = .*/command = "tuigreet --cmd niri-session"/' /etc/greetd/config.toml || \
+    printf "[terminal]\n$vt = 1\n[default_session]\ncommand = \"tuigreet --cmd niri-session\"\nuser = \"greeter\"\n" > /etc/greetd/config.toml
+
+# Enable DE services
+RUN systemctl disable sddm.service || true && \
+    systemctl enable greetd.service && \
+    systemctl --global enable install-flatpaks.service || true
+
+# Preserve /opt contents for OverlayFS
+# (visual-studio-code-bin and others install here)
+RUN if [ -d /var/opt ] && [ "$(ls -A /var/opt)" ]; then \
+        mkdir -p /usr/lib/opt && cp -r /var/opt/* /usr/lib/opt/ && rm -rf /var/opt/* ; \
+    fi

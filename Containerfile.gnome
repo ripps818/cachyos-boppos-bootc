@@ -1,0 +1,31 @@
+# BoppOS Containerfile.gnome
+#
+# Desktop overlay containing GNOME, gaming utilities, and developer tools.
+
+ARG BASE_IMAGE_TAG=latest
+FROM ghcr.io/ripps818/cachyos-boppos-base:${BASE_IMAGE_TAG}
+
+# ==========================================
+# MASTER PACKAGE INSTALLATION
+# ==========================================
+RUN pacman -Sy --noconfirm --needed \
+    # --- Desktop Environment (GNOME) Core ---
+    gnome gnome-tweaks gdm xorg-xwayland \
+    xdg-desktop-portal xdg-desktop-portal-gnome xdg-desktop-portal-gtk \
+    nautilus gnome-console gnome-text-editor ptyxis \
+    # --- GNOME Specific Themes ---
+    cachyos-gnome-settings && \
+    # --- Cleanup ---
+    rm -rf /usr/lib/sysimage/cache/pacman/pkg/*
+
+# Enable DE services
+# We disable SDDM if it was enabled, and enable GDM
+RUN systemctl disable sddm.service || true && \
+    systemctl enable gdm.service && \
+    systemctl --global enable install-flatpaks.service || true
+
+# Preserve /opt contents for OverlayFS
+# (visual-studio-code-bin and others install here)
+RUN if [ -d /var/opt ] && [ "$(ls -A /var/opt)" ]; then \
+        mkdir -p /usr/lib/opt && cp -r /var/opt/* /usr/lib/opt/ && rm -rf /var/opt/* ; \
+    fi

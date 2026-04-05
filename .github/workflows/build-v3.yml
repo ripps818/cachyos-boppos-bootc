@@ -4,8 +4,8 @@ on:
   pull_request:
     branches:
       - main
-  schedule:
-    - cron: "30 06 */2 * *" # 06:30am UTC every other day
+#  schedule:
+#    - cron: "30 06 */2 * *" # 06:30am UTC every other day
   workflow_dispatch:
     inputs:
       no_cache:
@@ -23,7 +23,6 @@ env:
   IMAGE_DESC: "CachyOS BoppOS Bootc image"
   IMAGE_KEYWORDS: "bootc,arch,cachyos"
   IMAGE_LOGO_URL: "https://avatars.githubusercontent.com/u/10499845?s=200&v=4"
-  IMAGE_NAME: "${{ github.event.repository.name }}"
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
   DEFAULT_TAG: "v3"
 
@@ -46,7 +45,6 @@ jobs:
         run: |
           # Lowercase the image uri
           echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
-          echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
 
       - name: Check Compatibility (v3)
         id: check_compatibility
@@ -83,13 +81,13 @@ jobs:
             type=sha,enable=${{ github.event_name == 'pull_request' }}
             type=ref,event=pr
           labels: |
-            io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
+            io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ github.sha }}/README.md
             org.opencontainers.image.created=${{ steps.date.outputs.date }}
             org.opencontainers.image.description=${{ env.IMAGE_DESC }}
-            org.opencontainers.image.documentation=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
-            org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/blob/${{ github.sha }}/Containerfile
-            org.opencontainers.image.title=${{ env.IMAGE_NAME }}
-            org.opencontainers.image.url=https://github.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/tree/${{ github.sha }}
+            org.opencontainers.image.documentation=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ github.sha }}/README.md
+            org.opencontainers.image.source=https://github.com/${{ github.repository_owner }}/${{ github.event.repository.name }}
+            org.opencontainers.image.title=cachyos-boppos
+            org.opencontainers.image.url=https://github.com/${{ github.repository_owner }}/${{ github.event.repository.name }}/tree/${{ github.sha }}
             org.opencontainers.image.vendor=${{ github.repository_owner }}
             org.opencontainers.image.version=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
             io.artifacthub.package.deprecated=false
@@ -110,8 +108,8 @@ jobs:
           echo "${GITHUB_TOKEN}" | sudo podman login -u "${LOGIN_USER}" --password-stdin "ghcr.io"
           echo "${GITHUB_TOKEN}" | docker login -u "${LOGIN_USER}" --password-stdin "ghcr.io" # For cosign
 
-      - name: Build Image
-        id: build_image
+      - name: Build & Rechunk Images
+        id: build_rechunk
         if: steps.check_compatibility.outputs.should_skip != 'true'
         env:
           META_LABELS: ${{ steps.metadata.outputs.labels }}
@@ -146,75 +144,95 @@ jobs:
             BUILD_ARGS+=("--build-arg" "WIPE_PKG_CACHE=true")
           fi
 
-          sudo podman build "${BUILD_ARGS[@]}" \
-            --network=host \
-            --build-arg TARGET_CPU_MARCH="$MARCH" \
-            --build-arg BASE_IMAGE_TAG="$BASE_TAG" \
-            --tag "$IMAGE_NAME:$DEFAULT_TAG" .
-
-      - name: Rechunk Image
-        if: steps.check_compatibility.outputs.should_skip != 'true'
-        run: |
-          set -xeuo pipefail
-
-          IMAGE_REF="localhost/${IMAGE_NAME}:${DEFAULT_TAG}"
-          ARCHIVE_PATH="${{ github.workspace }}/rechunked_image.tar"
-
-          # Write the chunkah stream to disk to prevent pipe deadlocks and RAM exhaustion
-          sudo podman run --rm --network=none --mount=type=image,source=$IMAGE_REF,target=/chunkah \
-            -e CHUNKAH_CONFIG_STR="$(sudo podman inspect $IMAGE_REF)" \
-            quay.io/coreos/chunkah build --compressed --compression-level 2 --label containers.bootc=1 --max-layers 256 --prune /var/cache/ --prune /var/log/ --prune /tmp/ --prune /var/tmp/ > "$ARCHIVE_PATH"
-
-          # THE BATON PASS: Delete the massive unchunked image from Podman!
-          echo "Freeing space: Deleting the original unchunked image from Podman..."
-          sudo podman rmi -f "$IMAGE_REF"
+          FLAVORS=("base" "plasma" "gnome" "niri")
           
-          # Quick prune to flush the deleted layers from the storage graph
-          sudo podman system prune -f
+          for FLAVOR in "${FLAVORS[@]}"; do
+            echo "::group::Building $FLAVOR"
+            CURRENT_IMAGE_NAME="cachyos-boppos-${FLAVOR}"
+            
+            if [ "$FLAVOR" == "base" ]; then
+              DOCKERFILE="Containerfile.base"
+              FLAVOR_ARGS=("--build-arg" "BASE_IMAGE_TAG=$BASE_TAG" "--build-arg" "TARGET_CPU_MARCH=$MARCH")
+            else
+              DOCKERFILE="Containerfile.${FLAVOR}"
+              FLAVOR_ARGS=("--build-arg" "BASE_IMAGE_TAG=$DEFAULT_TAG")
+            fi
 
-          # Load the completed archive back into podman
-          sudo podman load -i "$ARCHIVE_PATH" > /tmp/podman_load_output.txt
-          
-          # Clean up immediately to save disk space
-          sudo rm -f "$ARCHIVE_PATH"
+            sudo podman build "${BUILD_ARGS[@]}" "${FLAVOR_ARGS[@]}" \
+              --network=host \
+              --tag "localhost/$CURRENT_IMAGE_NAME:$DEFAULT_TAG" -f "$DOCKERFILE" .
 
-          IMAGE_ID=$(cat /tmp/podman_load_output.txt | grep "Loaded image" | awk '{print $3}')
-          sudo podman tag "$IMAGE_ID" "$IMAGE_REF"
+              echo "Rechunking base image..."
+              IMAGE_REF="localhost/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}"
+              ARCHIVE_PATH="${{ github.workspace }}/rechunked_${FLAVOR}.tar"
+
+              sudo podman run --rm --network=none --mount=type=image,source=$IMAGE_REF,target=/chunkah \
+                -e CHUNKAH_CONFIG_STR="$(sudo podman inspect $IMAGE_REF)" \
+                quay.io/coreos/chunkah build --compressed --compression-level 2 --label containers.bootc=1 --max-layers 256 --prune /var/cache/ --prune /var/log/ --prune /tmp/ --prune /var/tmp/ > "$ARCHIVE_PATH"
+
+              sudo podman rmi -f "$IMAGE_REF"
+              sudo podman system prune -f
+              sudo podman load -i "$ARCHIVE_PATH" > /tmp/podman_load_output.txt
+              sudo rm -f "$ARCHIVE_PATH"
+
+              IMAGE_ID=$(cat /tmp/podman_load_output.txt | grep "Loaded image" | awk '{print $3}')
+              sudo podman tag "$IMAGE_ID" "$IMAGE_REF"
+              
+              # Ensure the local base image is tagged properly so the DE overlays can layer onto it!
+              sudo podman tag "$IMAGE_REF" "${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}"
+            else
+              DOCKERFILE="Containerfile.${FLAVOR}"
+              FLAVOR_ARGS=("--build-arg" "BASE_IMAGE_TAG=$DEFAULT_TAG")
+
+              # For DE overlays, just build! They layer natively on the rechunked base.
+              sudo podman build "${BUILD_ARGS[@]}" "${FLAVOR_ARGS[@]}" \
+                --network=host \
+                --tag "localhost/$CURRENT_IMAGE_NAME:$DEFAULT_TAG" -f "$DOCKERFILE" .
+            fi
+            
+            echo "::endgroup::"
+          done
 
       - name: Push to GHCR
         if: steps.check_compatibility.outputs.should_skip != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         id: push
         env:
           IMAGE_REGISTRY: ${{ env.IMAGE_REGISTRY }}
-          IMAGE_NAME: ${{ env.IMAGE_NAME }}
           IMAGE_TAGS: ${{ steps.metadata.outputs.tags }}
           MAX_RETRIES: 3
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -ex
           
-          for tag in $IMAGE_TAGS; do
-            SUCCESS=false
-            for i in $(seq "${MAX_RETRIES}"); do
-              if sudo podman push "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}"; then
-                echo "Initial push completed. Performing a safety push to ensure GHCR metadata syncs..."
-                sudo podman push "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}"
-                SUCCESS=true
-                break
-              fi
-              echo "Push failed, retrying in $((5 * i)) seconds..."
-              sleep $((5 * i))
-            done
-            if [ "$SUCCESS" = "false" ]; then
-              echo "::error::Failed to push tag $tag after $MAX_RETRIES retries."
-              exit 1
-            fi
-          done
+          FLAVORS=("base" "plasma" "gnome" "niri")
           
-          # Fetch the exact remote digest directly from the registry to account for GHCR mutations
-          REMOTE_DIGEST=$(sudo skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}")
-          echo "Captured remote digest: $REMOTE_DIGEST"
-          echo "remote_image_digest=${REMOTE_DIGEST}" >> "${GITHUB_OUTPUT}"
+          for FLAVOR in "${FLAVORS[@]}"; do
+            echo "::group::Pushing $FLAVOR"
+            CURRENT_IMAGE_NAME="cachyos-boppos-${FLAVOR}"
+            
+            for tag in $IMAGE_TAGS; do
+              SUCCESS=false
+              for i in $(seq "${MAX_RETRIES}"); do
+                if sudo podman push --compression-format=zstd --compression-level=2 "localhost/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${tag}"; then
+                  echo "Initial push completed. Performing a safety push to ensure GHCR metadata syncs..."
+                  sudo podman push --compression-format=zstd --compression-level=2 "localhost/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${tag}"
+                  SUCCESS=true
+                  break
+                fi
+                echo "Push failed, retrying in $((5 * i)) seconds..."
+                sleep $((5 * i))
+              done
+              if [ "$SUCCESS" = "false" ]; then
+                echo "::error::Failed to push tag $tag after $MAX_RETRIES retries."
+                exit 1
+              fi
+            done
+            
+            REMOTE_DIGEST=$(sudo skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}")
+            echo "Captured remote digest: $REMOTE_DIGEST"
+            echo "${CURRENT_IMAGE_NAME}=${REMOTE_DIGEST}" >> digests.env
+            echo "::endgroup::"
+          done
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
@@ -224,9 +242,11 @@ jobs:
 
       - name: Sign container image
         if: steps.check_compatibility.outputs.should_skip != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        run: cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}@${REMOTE_IMAGE_DIGEST}"
+        run: |
+          while IFS='=' read -r img digest; do
+            cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REGISTRY}/${img}:${DEFAULT_TAG}@${digest}"
+          done < digests.env
         env:
-          REMOTE_IMAGE_DIGEST: ${{ steps.push.outputs.remote_image_digest }}
           COSIGN_EXPERIMENTAL: false
           COSIGN_PRIVATE_KEY: ${{ secrets.SIGNING_SECRET }}
 
@@ -239,7 +259,7 @@ jobs:
           sudo rm -rf /var/tmp/container_images_* /var/tmp/podman*
           
           # 2. Delete the massive chunkah tarballs
-          sudo rm -f /tmp/chunked_image.tar /tmp/podman_load_output.txt
+          sudo rm -f /tmp/chunked_image.tar /tmp/podman_load_output.txt ${{ github.workspace }}/rechunked_*.tar
           
           # 3. Prune dangling (<none>) images AND the intermediate build cache
           sudo podman image prune --force

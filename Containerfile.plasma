@@ -1,0 +1,36 @@
+# BoppOS Containerfile.plasma
+#
+# Desktop overlay containing KDE Plasma, gaming utilities, and developer tools.
+
+ARG BASE_IMAGE_TAG=latest
+FROM ghcr.io/ripps818/cachyos-boppos-base:${BASE_IMAGE_TAG}
+
+# ==========================================
+# MASTER PACKAGE INSTALLATION
+# ==========================================
+RUN pacman -Sy --noconfirm --needed \
+    # --- Desktop Environment (KDE Plasma) Core ---
+    plasma-desktop plasma-workspace xorg-xwayland qt5-wayland qt6-wayland \
+    breeze-gtk sddm sddm-kcm powerdevil kscreen polkit-kde-agent \
+    xdg-desktop-portal xdg-desktop-portal-kde xdg-desktop-portal-gtk kde-gtk-config colord-kde \
+    # --- Desktop Integration & Services ---
+    plasma plasma-pa plasma-nm kwallet-pam udisks2 python-gobject \
+    kio-extras kio-fuse kio-admin flatpak-kcm xdg-utils libappimage \
+    # --- KDE Utilities & Addons ---
+    dolphin dolphin-plugins konsole kate ark spectacle kdeconnect \
+    partitionmanager plasma-disks plasma-systemmonitor \
+    kdialog filelight yakuake kfind kwalletmanager sweeper \
+    # --- Plasma Specific Media & Themes ---
+    ffmpegthumbnailer ffmpegthumbs kdegraphics-thumbnailers kimageformats qt6-imageformats \
+    cachyos-kde-settings cachyos-themes-sddm cachyos-emerald-kde-theme-git cachyos-nord-gtk-theme-git && \
+    # --- Cleanup ---
+    rm -rf /usr/lib/sysimage/cache/pacman/pkg/*
+
+# Enable DE services
+RUN systemctl enable sddm.service && \
+    systemctl --global enable install-flatpaks.service || true
+
+# Preserve /opt contents for OverlayFS
+RUN if [ -d /var/opt ] && [ "$(ls -A /var/opt)" ]; then \
+        mkdir -p /usr/lib/opt && cp -r /var/opt/* /usr/lib/opt/ && rm -rf /var/opt/* ; \
+    fi

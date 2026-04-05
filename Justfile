@@ -1,62 +1,74 @@
 # Configuration
 registry := "ghcr.io"
 user := "ripps818"
-image_name := "cachyos-boppos-bootc"
-full_image := registry + "/" + user + "/" + image_name
 
 # Default action
 default:
     @just --list
 
-# Build the container image.
-# Accepts an optional architecture (v3, v4, znver4).
-build arch='v3':
-    @echo "Building {{full_image}}:{{arch}} for TARGET_CPU_MARCH={{arch}}..."
-    podman build \
-        --network=host \
-        --build-arg TARGET_CPU_MARCH={{arch}} \
-        --build-arg BASE_IMAGE_TAG=$(if [ "{{arch}}" = "znver4" ]; then echo "v4"; else echo "{{arch}}"; fi) \
-        -t "{{full_image}}:{{arch}}" \
-        .
+# Build a specific flavor of the container image.
+# Accepts an optional architecture (v3, v4, znver4) and flavor (base, plasma, gnome, niri).
+build arch='v3' flavor='base':
+    @echo "Building cachyos-boppos-{{flavor}}:{{arch}}..."
+    @if [ "{{flavor}}" = "base" ]; then \
+        podman build \
+            --network=host \
+            --build-arg TARGET_CPU_MARCH={{arch}} \
+            --build-arg BASE_IMAGE_TAG=$(if [ "{{arch}}" = "znver4" ]; then echo "v4"; else echo "{{arch}}"; fi) \
+            -f Containerfile.base \
+            -t "{{registry}}/{{user}}/cachyos-boppos-base:{{arch}}" \
+            .; \
+    else \
+        podman build \
+            --network=host \
+            --build-arg BASE_IMAGE_TAG={{arch}} \
+            -f Containerfile.{{flavor}} \
+            -t "{{registry}}/{{user}}/cachyos-boppos-{{flavor}}:{{arch}}" \
+            .; \
+    fi
 
 # Push the built image(s) to the container registry.
-push arch='v3': (rechunk arch)
-    @echo "Pushing {{full_image}}:{{arch}}..."
+push arch='v3' flavor='base': (rechunk arch flavor)
+    @echo "Pushing cachyos-boppos-{{flavor}}:{{arch}}..."
     set -euo pipefail
     podman push \
         --authfile /etc/containers/auth.json \
         --digestfile=/tmp/podman_push_digest_{{arch}}.txt \
         --compression-format=zstd \
-        "{{full_image}}:{{arch}}"
+        "{{registry}}/{{user}}/cachyos-boppos-{{flavor}}:{{arch}}"
     @echo "Performing safety push to ensure GHCR metadata syncs..."
     podman push \
         --authfile /etc/containers/auth.json \
         --digestfile=/tmp/podman_push_digest_{{arch}}.txt \
         --compression-format=zstd \
-        "{{full_image}}:{{arch}}"
+        "{{registry}}/{{user}}/cachyos-boppos-{{flavor}}:{{arch}}"
 
 # Rechunk the built image(s) to optimize layers.
-rechunk arch='v3':
-    @echo "Rechunking {{full_image}}:{{arch}}..."
-    podman run --rm --mount=type=image,source={{full_image}}:{{arch}},target=/chunkah \
-        -e CHUNKAH_CONFIG_STR="$(podman inspect {{full_image}}:{{arch}})" \
-        quay.io/jlebon/chunkah build --label containers.bootc=1 --max-layers 256 | podman load > /tmp/podman_load_output.txt
-    IMAGE_ID=$(cat /tmp/podman_load_output.txt | grep "Loaded image" | awk '{print $3}') && \
-    podman tag "$IMAGE_ID" "{{full_image}}:{{arch}}"
+rechunk arch='v3' flavor='base':
+    @if [ "{{flavor}}" = "base" ]; then \
+        echo "Rechunking cachyos-boppos-base:{{arch}}..."; \
+        podman run --rm --mount=type=image,source={{registry}}/{{user}}/cachyos-boppos-base:{{arch}},target=/chunkah \
+            -e CHUNKAH_CONFIG_STR="$$(podman inspect {{registry}}/{{user}}/cachyos-boppos-base:{{arch}})" \
+            quay.io/coreos/chunkah build --compressed --compression-level 2 --label containers.bootc=1 --max-layers 256 --prune /var/cache/ --prune /var/log/ --prune /tmp/ --prune /var/tmp/ | podman load > /tmp/podman_load_output.txt; \
+        IMAGE_ID=$$(cat /tmp/podman_load_output.txt | grep "Loaded image" | awk '{print $$3}'); \
+        podman tag "$$IMAGE_ID" "{{registry}}/{{user}}/cachyos-boppos-base:{{arch}}"; \
+    else \
+        echo "Skipping rechunk for DE overlay {{flavor}}..."; \
+    fi
 
 # Sign the published image using cosign. Defaults to cosign.key in the current directory unless COSIGN_PRIVATE_KEY is exported.
-sign arch='v3':
+sign arch='v3' flavor='base':
     @# The signing logic is complex and has shell escaping issues within Just.
     @# Moving it to a dedicated script makes it more robust and maintainable.
-    @./scripts/sign.sh "{{full_image}}" "{{arch}}"
+    @./scripts/sign.sh "{{registry}}/{{user}}/cachyos-boppos-{{flavor}}" "{{arch}}"
 
-switch tag='v3':
+switch tag='v3' flavor='plasma':
     @echo "Transferring rootless image to root storage..."
-    podman save "{{full_image}}:{{tag}}" | sudo podman load
-    @echo "Switching system to {{full_image}}:{{tag}}..."
+    podman save "{{registry}}/{{user}}/cachyos-boppos-{{flavor}}:{{tag}}" | sudo podman load
+    @echo "Switching system to cachyos-boppos-{{flavor}}:{{tag}}..."
     sudo bootc switch \
         --transport containers-storage \
-        "{{full_image}}:{{tag}}"
+        "{{registry}}/{{user}}/cachyos-boppos-{{flavor}}:{{tag}}"
 
 # Manually apply kernel arguments to the currently running system for local testing
 apply-local-kargs:

@@ -215,15 +215,28 @@ jobs:
           MAX_RETRIES: 3
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -x
+          set -ex
+          
           for tag in $IMAGE_TAGS; do
+            SUCCESS=false
             for i in $(seq "${MAX_RETRIES}"); do
-              sudo podman push --digestfile=/tmp/push_digest.txt "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}" && break || sleep $((5 * i));
+              if sudo podman push "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}"; then
+                echo "Initial push completed. Performing a safety push to ensure GHCR metadata syncs..."
+                sudo podman push "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}"
+                SUCCESS=true
+                break
+              fi
+              echo "Push failed, retrying in $((5 * i)) seconds..."
+              sleep $((5 * i))
             done
+            if [ "$SUCCESS" = "false" ]; then
+              echo "::error::Failed to push tag $tag after $MAX_RETRIES retries."
+              exit 1
+            fi
           done
           
-          # Fetch the exact remote digest directly from Podman's push output
-          REMOTE_DIGEST=$(sudo cat /tmp/push_digest.txt)
+          # Fetch the exact remote digest directly from the registry to account for GHCR mutations
+          REMOTE_DIGEST=$(sudo skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}")
           echo "Captured remote digest: $REMOTE_DIGEST"
           echo "remote_image_digest=${REMOTE_DIGEST}" >> "${GITHUB_OUTPUT}"
 
@@ -235,7 +248,7 @@ jobs:
 
       - name: Sign container image
         if: steps.check_compatibility.outputs.should_skip != 'true' && github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        run: cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REGISTRY}/${IMAGE_NAME}@${REMOTE_IMAGE_DIGEST}"
+        run: cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE_REGISTRY}/${IMAGE_NAME}:${DEFAULT_TAG}@${REMOTE_IMAGE_DIGEST}"
         env:
           REMOTE_IMAGE_DIGEST: ${{ steps.push.outputs.remote_image_digest }}
           COSIGN_EXPERIMENTAL: false

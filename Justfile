@@ -28,6 +28,12 @@ push arch='v3': (rechunk arch)
         --digestfile=/tmp/podman_push_digest_{{arch}}.txt \
         --compression-format=zstd \
         "{{full_image}}:{{arch}}"
+    @echo "Performing safety push to ensure GHCR metadata syncs..."
+    podman push \
+        --authfile /etc/containers/auth.json \
+        --digestfile=/tmp/podman_push_digest_{{arch}}.txt \
+        --compression-format=zstd \
+        "{{full_image}}:{{arch}}"
 
 # Rechunk the built image(s) to optimize layers.
 rechunk arch='v3':

@@ -27,15 +27,11 @@ else
     exit 1
 fi
 
-# Check for the digest file and read the digest
-DIGEST_FILE="/tmp/podman_push_digest_${ARCH}.txt"
-if ! [ -s "$DIGEST_FILE" ]; then
-    echo "Error: Digest file \"$DIGEST_FILE\" not found or is empty. Did the 'push' recipe run successfully?" >&2
-    exit 1
-fi
-DIGEST=$(head -n 1 "$DIGEST_FILE" | tr -d '[:space:]')
+# Fetch the exact remote digest directly from the registry to account for GHCR mutations
+echo "Fetching remote digest from registry for ${FULL_IMAGE}:${ARCH}..."
+DIGEST=$(sudo skopeo inspect --authfile=/etc/containers/auth.json --format '{{.Digest}}' "docker://${FULL_IMAGE}:${ARCH}")
 if [ -z "$DIGEST" ]; then
-    echo "Error: Digest read from \"$DIGEST_FILE\" is empty. File content: \`cat \"$DIGEST_FILE\"\`" >&2
+    echo "Error: Failed to fetch digest for ${FULL_IMAGE}:${ARCH} from registry." >&2
     exit 1
 fi
 
@@ -46,4 +42,4 @@ echo "Signing image with digest: $DIGEST"
 # `sudo -E` is used to preserve the COSIGN_PRIVATE_KEY environment variable if it is set.
 # We also explicitly set REGISTRY_AUTH_FILE to ensure cosign finds the correct credentials,
 # mirroring the --authfile flag used in the Justfile's push recipe.
-sudo -E REGISTRY_AUTH_FILE=/etc/containers/auth.json cosign sign -y --new-bundle-format=false --use-signing-config=false $KEY_ARG "${FULL_IMAGE}@${DIGEST}"
+sudo -E REGISTRY_AUTH_FILE=/etc/containers/auth.json cosign sign -y --new-bundle-format=false --use-signing-config=false $KEY_ARG "${FULL_IMAGE}:${ARCH}@${DIGEST}"

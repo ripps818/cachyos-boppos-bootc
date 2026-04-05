@@ -120,6 +120,12 @@ COPY files/usr/lib /usr/lib
 COPY files/usr/libexec /usr/libexec
 RUN chmod -R 0755 /usr/libexec
 
+# Disable initramfs generation during pacman transactions to save redundant build time.
+# We explicitly generate the initramfs with bootc modules at the end of the build.
+RUN mkdir -p /etc/pacman.d/hooks && \
+    ln -s /dev/null /etc/pacman.d/hooks/90-mkinitcpio-install.hook && \
+    ln -s /dev/null /etc/pacman.d/hooks/90-dracut-install.hook
+
 # Generate en_US.UTF-8 locale
 RUN sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
     locale-gen && \
@@ -128,6 +134,10 @@ RUN sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
 # Dracut i18n fix
 RUN mkdir -p /usr/lib/dracut/dracut.conf.d && \
     echo 'i18n_vars="/usr/share/kbd/consolefonts  /usr/share/kbd/keymaps"' >> /usr/lib/dracut/dracut.conf.d/boppos-cachyos.conf
+
+# Backfill user.component attributes for the original CachyOS base image packages.
+# Subsequent package installs will be handled automatically by the ALPM hook.
+RUN pacman -Qq | /usr/libexec/assign-usercomponent.sh
 
 # ==========================================
 # CPU ARCHITECTURE REPOSITORY SETUP

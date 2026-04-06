@@ -191,8 +191,6 @@ jobs:
             SUCCESS=false
             for i in $(seq "${MAX_RETRIES}"); do
               if sudo podman push --compression-format=zstd --compression-level=2 "localhost/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${tag}"; then
-                echo "Initial push completed. Performing a safety push to ensure GHCR metadata syncs..."
-                sudo podman push --compression-format=zstd --compression-level=2 "localhost/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${tag}"
                 SUCCESS=true
                 break
               fi
@@ -274,8 +272,6 @@ jobs:
               SUCCESS=false
               for i in $(seq "${MAX_RETRIES}"); do
                 if sudo podman push --compression-format=zstd --compression-level=2 "localhost/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${tag}"; then
-                  echo "Initial push completed. Performing a safety push to ensure GHCR metadata syncs..."
-                  sudo podman push --compression-format=zstd --compression-level=2 "localhost/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${tag}"
                   SUCCESS=true
                   break
                 fi

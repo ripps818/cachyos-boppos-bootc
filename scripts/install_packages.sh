@@ -100,4 +100,7 @@ except Exception as e:
 echo "Installation complete for $YAML_FILE."
 
 # Ensure no background GnuPG daemons are left hanging to prevent podman build freezes
-pkill -9 gpg-agent; pkill -9 dirmngr; pkill -9 keyboxd; pkill -9 scdaemon; true
+pkill -9 gpg-agent || true
+pkill -9 dirmngr || true
+pkill -9 keyboxd || true
+pkill -9 scdaemon || true

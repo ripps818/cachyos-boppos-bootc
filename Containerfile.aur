@@ -49,7 +49,7 @@ RUN if [ "$TARGET_CPU_MARCH" = "znver4" ]; then \
         rm -f /tmp/znver4-repos.conf ; \
     fi
 
-RUN pacman -S --noconfirm --needed base-devel git sudo && \
+RUN pacman -Sy --noconfirm --needed base-devel git sudo && \
     useradd -m builduser && \
     echo "builduser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
     mkdir -p /home/builduser/packages && \

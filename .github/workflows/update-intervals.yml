@@ -1,0 +1,106 @@
+name: Update Package Intervals
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Run weekly on Sundays
+  workflow_dispatch:
+    inputs:
+      max_age:
+        description: 'Max age for cached entries in days'
+        required: false
+        default: '30'
+      force_podman:
+        description: 'Force Podman extraction (ignore SBOM)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  update-intervals:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.5.0
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Restore Package Intervals Cache
+        uses: actions/cache/restore@v4
+        with:
+          path: scripts/package-intervals.json
+          key: pkg-intervals-latest
+          restore-keys: |
+            pkg-intervals-
+
+      - name: Generate Package Lists from All Images
+        run: |
+          mkdir -p build
+          touch build/all-packages-temp.txt build/cachyos-packages-temp.txt build/aur-packages-temp.txt
+          
+          # Spin up the latest version of every image flavor to build a master superset of packages
+          for FLAVOR in plasma gnome niri; do
+            IMAGE_REF="ghcr.io/${{ github.repository_owner }}/cachyos-${FLAVOR}:v3"
+            USE_PODMAN=false
+            
+            if [ "${{ github.event.inputs.force_podman }}" == "true" ]; then
+              USE_PODMAN=true
+            else
+              echo "Attempting to download SBOM for $IMAGE_REF..."
+              if cosign download sbom "$IMAGE_REF" > sbom-${FLAVOR}.json 2>/dev/null && [ -s sbom-${FLAVOR}.json ]; then
+                # Validate SBOM structure (handles both flat arrays and .packages objects)
+                if jq -e 'if type=="array" then .[0].name else .packages[0].name end' sbom-${FLAVOR}.json > /dev/null 2>&1; then
+                  echo "Successfully downloaded and validated SBOM."
+                  jq -r 'if type=="array" then .[] else .packages[] end | .name' sbom-${FLAVOR}.json >> build/all-packages-temp.txt
+                  jq -r 'if type=="array" then .[] else .packages[] end | select(.repository != null and (.repository | test("cachyos"))) | .name' sbom-${FLAVOR}.json >> build/cachyos-packages-temp.txt 2>/dev/null || true
+                  jq -r 'if type=="array" then .[] else .packages[] end | select(.repository != null and (.repository == "aur" or .repository == "unknown")) | .name' sbom-${FLAVOR}.json >> build/aur-packages-temp.txt 2>/dev/null || true
+                else
+                  echo "SBOM format unrecognized or missing package names. Falling back to Podman."
+                  USE_PODMAN=true
+                fi
+              else
+                echo "Failed to download SBOM or SBOM is empty. Falling back to Podman."
+                USE_PODMAN=true
+              fi
+            fi
+            
+            if [ "$USE_PODMAN" == "true" ]; then
+              echo "Extracting packages using Podman container fallback..."
+              sudo podman run --rm -v ${{ github.workspace }}/scripts:/scripts:ro -v ${{ github.workspace }}/build:/build:rw "$IMAGE_REF" bash -c "/scripts/generate-package-list.sh"
+              cat build/all-packages.txt >> build/all-packages-temp.txt 2>/dev/null || true
+              cat build/cachyos-packages.txt >> build/cachyos-packages-temp.txt 2>/dev/null || true
+              cat build/aur-packages.txt >> build/aur-packages-temp.txt 2>/dev/null || true
+            fi
+          done
+          
+          sort -u build/all-packages-temp.txt > build/all-packages.txt
+          sort -u build/cachyos-packages-temp.txt > build/cachyos-packages.txt
+          sort -u build/aur-packages-temp.txt > build/aur-packages.txt
+
+      - name: Fetch and Calculate Chunkah Intervals
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat build/all-packages.txt | python scripts/fetch-update-intervals.py \
+            --cachyos-packages build/cachyos-packages.txt \
+            --aur-packages build/aur-packages.txt \
+            --cache-file scripts/package-intervals.json \
+            --max-age-days ${{ github.event.inputs.max_age || '30' }} \
+            --concurrency 10
+
+      - name: Save Package Intervals to Cache
+        uses: actions/cache/save@v4
+        with:
+          path: scripts/package-intervals.json
+          key: pkg-intervals-${{ hashFiles('scripts/package-intervals.json') }}

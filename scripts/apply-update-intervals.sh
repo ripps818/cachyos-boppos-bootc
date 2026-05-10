@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-JSON_FILE="${1:-tools/package-intervals.json}"
+JSON_FILE="${1:-scripts/package-intervals.json}"
 ROOTFS="${2:-/}"
 CONCURRENCY=4
 

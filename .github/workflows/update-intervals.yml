@@ -60,7 +60,7 @@ jobs:
               echo "Attempting to download SBOM for $IMAGE_REF..."
               if cosign download sbom "$IMAGE_REF" > sbom-${FLAVOR}.json 2>/dev/null && [ -s sbom-${FLAVOR}.json ]; then
                 # Validate SBOM structure (handles both flat arrays and .packages objects)
-                if jq -e 'if type=="array" then .[0].name else .packages[0].name end' sbom-${FLAVOR}.json > /dev/null 2>&1; then
+                if jq -e 'if type=="array" then (.[0] | has("repository")) else (.packages[0] | has("repository")) end' sbom-${FLAVOR}.json > /dev/null 2>&1; then
                   echo "Successfully downloaded and validated SBOM."
                   jq -r 'if type=="array" then .[] else .packages[] end | .name' sbom-${FLAVOR}.json >> build/all-packages-temp.txt
                   jq -r 'if type=="array" then .[] else .packages[] end | select(.repository != null and (.repository | test("cachyos"))) | .name' sbom-${FLAVOR}.json >> build/cachyos-packages-temp.txt 2>/dev/null || true

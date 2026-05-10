@@ -1,6 +1,8 @@
 name: Update Package Intervals
 
 on:
+  push:
+    branches: [ "*" ] # Temporary trigger for testing on branches
   schedule:
     - cron: '0 0 * * 0' # Run weekly on Sundays
   workflow_dispatch:

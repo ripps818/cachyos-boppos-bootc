@@ -443,11 +443,21 @@ jobs:
           set -ex
           FLAVOR="${{ matrix.flavor }}"
           CURRENT_IMAGE_NAME="cachyos-${FLAVOR}"
+          SOURCE_IMAGE="containers-storage:localhost/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}"
           
           for tag in $IMAGE_TAGS; do
+            DEST_IMAGE="docker://${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${tag}"
             SUCCESS=false
             for i in $(seq "${MAX_RETRIES}"); do
-              if sudo podman push "localhost/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${tag}"; then SUCCESS=true; break; fi
+              # Use skopeo to copy with zstd compression for smaller images
+              if sudo skopeo copy \
+                  --dest-compress-format zstd:chunked \
+                  --dest-compress-level 19 \
+                  --force-compression \
+                  "$SOURCE_IMAGE" "$DEST_IMAGE"; then
+                SUCCESS=true
+                break
+              fi
               echo "Push failed, retrying in $((5 * i)) seconds..."; sleep $((5 * i))
             done
             if [ "$SUCCESS" = "false" ]; then exit 1; fi

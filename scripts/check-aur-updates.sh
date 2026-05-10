@@ -19,7 +19,7 @@ for repo in "$PKGBUILDS_DIR"/*/; do
     repo="${repo%/}"
     repo_name="$(basename "$repo")"
 
-    if [ ! -d "$repo/.git" ]; then
+    if [ ! -e "$repo/.git" ]; then
         continue
     fi
 

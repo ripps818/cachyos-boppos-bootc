@@ -1,0 +1,60 @@
+name: Update Package Intervals
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Run weekly on Sundays
+  workflow_dispatch:
+    inputs:
+      max_age:
+        description: 'Max age for cached entries in days'
+        required: false
+        default: '30'
+
+permissions:
+  contents: write
+
+jobs:
+  update-intervals:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: pip install aiohttp beautifulsoup4
+
+      - name: Generate Package Lists from Base Image
+        run: |
+          # Spin up the latest version of your base image to run the extraction script
+          mkdir -p build
+          docker run --rm -v ${{ github.workspace }}/tools:/tools:ro -v ${{ github.workspace }}/build:/build:rw ghcr.io/${{ github.repository_owner }}/cachyos-base:latest bash -c "/tools/generate-package-list.sh && cp -r build/* /build/"
+
+      - name: Fetch and Calculate Chunkah Intervals
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat build/all-packages.txt | python tools/fetch-update-intervals.py \
+            --cachyos-packages build/cachyos-packages.txt \
+            --cache-file tools/package-intervals.json \
+            --max-age-days ${{ github.event.inputs.max_age || '30' }} \
+            --concurrency 10
+
+      - name: Commit and Push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tools/package-intervals.json
+          if git diff --staged --quiet; then
+            echo "No changes to package intervals."
+          else
+            git commit -m "chore: update chunkah package intervals"
+            git push
+          fi

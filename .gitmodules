@@ -1,0 +1,12 @@
+[submodule "files/aur/pkgbuilds/sddm-theme-noctalia-git"]
+	path = files/aur/pkgbuilds/sddm-theme-noctalia-git
+	url = https://aur.archlinux.org/sddm-theme-noctalia-git.git
+[submodule "files/aur/pkgbuilds/autofs"]
+	path = files/aur/pkgbuilds/autofs
+	url = https://aur.archlinux.org/autofs.git
+[submodule "files/aur/pkgbuilds/scopebuddy-git"]
+	path = files/aur/pkgbuilds/scopebuddy-git
+	url = https://aur.archlinux.org/scopebuddy-git.git
+[submodule "files/aur/pkgbuilds/mullvad-vpn-bin"]
+	path = files/aur/pkgbuilds/mullvad-vpn-bin
+	url = https://aur.archlinux.org/mullvad-vpn-bin.git

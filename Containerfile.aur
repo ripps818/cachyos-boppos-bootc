@@ -63,6 +63,7 @@ RUN rm -rf /var/lib/pacman/sync/* && \
 COPY --chown=builduser:builduser ./files/aur/pkgbuilds/sddm-theme-noctalia-git/ /tmp/sddm-theme-noctalia-git/
 COPY --chown=builduser:builduser ./files/aur/pkgbuilds/autofs/ /tmp/autofs/
 COPY --chown=builduser:builduser ./files/aur/pkgbuilds/scopebuddy-git/ /tmp/scopebuddy-git/
+COPY --chown=builduser:builduser ./files/aur/pkgbuilds/mullvad-vpn-bin/ /tmp/mullvad-vpn-bin/
 
 # Copy bootcrew-shared files from the new location
 COPY --chown=root:root ./files/aur/bootcrew-shared/ /bootcrew-shared/
@@ -82,12 +83,10 @@ RUN cd /tmp/sddm-theme-noctalia-git/ && \
     sudo -E -u builduser PKGDEST=/home/builduser/packages makepkg --noconfirm -s --skipinteg -c && \
     rm -rf /tmp/sddm-theme-noctalia-git/
 
-# Build mullvad-vpn-bin from AUR
-RUN cd /tmp && \
-    sudo -u builduser git clone https://aur.archlinux.org/mullvad-vpn-bin.git && \
-    cd mullvad-vpn-bin && \
+# Build mullvad-vpn-bin
+RUN cd /tmp/mullvad-vpn-bin/ && \
     sudo -E -u builduser PKGDEST=/home/builduser/packages makepkg --noconfirm -s --skipinteg -c && \
-    rm -rf /tmp/mullvad-vpn-bin
+    rm -rf /tmp/mullvad-vpn-bin/
 
 # Stage exported files for the base image
 RUN mkdir -p /export-pkgs && \

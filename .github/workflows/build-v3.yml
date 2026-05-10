@@ -100,6 +100,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          submodules: recursive
 
       - name: Get current date
         id: date
@@ -324,6 +326,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          submodules: recursive
 
       - name: Get current date
         id: date
@@ -410,7 +414,7 @@ jobs:
           PODMAN_OPTS=""
           if [ "${{ github.event.inputs.unconfined_build }}" == "true" ]; then PODMAN_OPTS="--security-opt seccomp=unconfined"; fi
 
-          sudo podman run $PODMAN_OPTS --rm --network=none --mount=type=image,source=$IMAGE_REF,target=/chunkah -e SOURCE_DATE_EPOCH=0 -e CHUNKAH_CONFIG_STR="$(sudo podman inspect $IMAGE_REF)" quay.io/coreos/chunkah build --compressed --compression-level 6 --label containers.bootc=1 --max-layers 128 --prune /var/cache/ --prune /var/log/ --prune /tmp/ --prune /var/tmp/ > "$ARCHIVE_PATH"
+          sudo podman run $PODMAN_OPTS --rm --network=none --mount=type=image,source=$IMAGE_REF,target=/chunkah -e SOURCE_DATE_EPOCH=0 -e CHUNKAH_CONFIG_STR="$(sudo podman inspect $IMAGE_REF)" quay.io/coreos/chunkah build --compressed --compression-level 6 --label containers.bootc=1 --max-layers 400 --prune /var/cache/ --prune /var/log/ --prune /tmp/ --prune /var/tmp/ > "$ARCHIVE_PATH"
 
           sudo podman rmi -f "$IMAGE_REF"
           sudo podman system prune -f

@@ -84,15 +84,10 @@ RUN sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
 RUN mkdir -p /usr/lib/dracut/dracut.conf.d && \
     echo 'i18n_vars="/usr/share/kbd/consolefonts  /usr/share/kbd/keymaps"' >> /usr/lib/dracut/dracut.conf.d/boppos-cachyos.conf
 
-# Backfill user.component attributes for the original CachyOS base image packages.
-# Subsequent package installs will be handled automatically by the ALPM hook.
-RUN COMPONENT_TAG="default-base" pacman -Qq | /usr/libexec/assign-usercomponent.sh
-
 # ==========================================
 # CPU ARCHITECTURE REPOSITORY SETUP
 # ==========================================
-RUN export COMPONENT_TAG="arch-optimizations" && \
-    rm -f /usr/lib/sysimage/cache/pacman/pkg/lua* && \
+RUN rm -f /usr/lib/sysimage/cache/pacman/pkg/lua* && \
     rm -f /usr/lib/sysimage/cache/pacman/pkg/*.part && \
     if ! mountpoint -q /usr/lib/sysimage/cache/pacman/pkg; then \
         pacman -Sc --noconfirm ; \
@@ -115,25 +110,25 @@ RUN --mount=type=tmpfs,dst=/run \
     pacman -Rdd --noconfirm pulseaudio pulseaudio-bluetooth || true
 
 RUN --mount=type=tmpfs,dst=/run \
-    COMPONENT_TAG="install-python" pacman -Sy --noconfirm --ask 4 --needed \
+    pacman -Sy --noconfirm --ask 4 --needed \
     python python-yaml yq
 
 RUN --mount=type=tmpfs,dst=/run \
-    COMPONENT_TAG="install-mesa" pacman -S --noconfirm --ask 4 --needed \
+    pacman -S --noconfirm --ask 4 --needed \
     mesa lib32-mesa mesa-utils intel-media-driver libdisplay-info lib32-libdisplay-info
 
 RUN --mount=type=tmpfs,dst=/run \
-    COMPONENT_TAG="install-vulkan" pacman -S --noconfirm --ask 4 --needed \
+    pacman -S --noconfirm --ask 4 --needed \
     vulkan-radeon lib32-vulkan-radeon vulkan-intel lib32-vulkan-intel \
     vulkan-nouveau lib32-vulkan-nouveau vulkan-mesa-layers lib32-vulkan-mesa-layers \
     vulkan-icd-loader lib32-vulkan-icd-loader
 
 COPY scripts/install_packages.sh /tmp/install_packages.sh
-COPY files/base/base-analyzed.yaml /tmp/base-analyzed.yaml
+COPY files/base/base.yaml /tmp/base.yaml
 
 RUN --mount=type=tmpfs,dst=/run \
     chmod +x /tmp/install_packages.sh && \
-    /tmp/install_packages.sh /tmp/base-analyzed.yaml
+    /tmp/install_packages.sh /tmp/base.yaml
 
 # Generate package list for diffing
 RUN chmod +x /usr/share/boppos/generate-package-list.sh && \
@@ -218,6 +213,12 @@ RUN mkdir -p /usr/lib/opt && \
     if [ -d /opt ] && [ "$(ls -A /opt)" ]; then \
         mv /opt/* /usr/lib/opt/ || true; \
     fi
+
+# Apply update intervals before bootc cleanup
+COPY scripts/package-intervals.json /tmp/package-intervals.json
+COPY scripts/apply-update-intervals.sh /tmp/apply-update-intervals.sh
+RUN chmod +x /tmp/apply-update-intervals.sh && \
+    /tmp/apply-update-intervals.sh /tmp/package-intervals.json /
 
 # Final system setup and cleanup
 RUN sed -i 's|^HOME=.*|HOME=/var/home|' "/etc/default/useradd" && \

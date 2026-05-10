@@ -16,7 +16,8 @@ COPY mirrors/cachyos-v3-mirrorlist /etc/pacman.d/cachyos-v3-mirrorlist
 COPY mirrors/cachyos-v4-mirrorlist /etc/pacman.d/cachyos-v4-mirrorlist
 
 # Minimal setup: just enough to build packages
-RUN pacman-key --init && \
+RUN rm -rf /etc/pacman.d/gnupg && \
+    pacman-key --init && \
     echo "no-tty" >> /etc/pacman.d/gnupg/gpg.conf && \
     pacman-key --populate archlinux cachyos && \
     pacman-key --recv-keys F3B607488DB35A47 5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB 3056513887B78AEB && \

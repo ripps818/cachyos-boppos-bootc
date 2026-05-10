@@ -81,7 +81,7 @@ jobs:
           fi
           
           # 2. Nuke leftover /tmp files and orphaned Podman extraction directories
-          sudo rm -rf /tmp/chunked_image.tar /tmp/podman_load_output.txt /tmp/tmp.* /var/tmp/container_images_* /var/tmp/podman* /var/tmp/cachyos-base-*.tar
+          sudo rm -rf /tmp/chunked_image.tar /tmp/podman_load_output.txt /tmp/tmp.* /var/tmp/container_images_* /var/tmp/podman* /var/tmp/cachyos-base-*.tar /var/tmp/stereoscope-* /var/tmp/sbom-*
           
           # 3. Prune dangling Podman data AND aggressively wipe the build cache
           sudo podman system prune --all --force --volumes --build
@@ -300,7 +300,7 @@ jobs:
           sudo podman system prune --force --volumes || true
           
           # 3. Obliterate orphaned Podman extraction directories (The 128GB Silent Killer)
-          sudo rm -rf /var/tmp/container_images_* /var/tmp/podman*
+          sudo rm -rf /var/tmp/container_images_* /var/tmp/podman* /var/tmp/stereoscope-* /var/tmp/sbom-*
           
           # 4. Delete the massive chunkah tarballs
           sudo rm -f /tmp/chunked_image.tar /tmp/podman_load_output.txt ${{ github.workspace }}/rechunked_*.tar
@@ -528,7 +528,7 @@ jobs:
           echo "🧹 Sweeping up the heavy Podman assets..."
           sudo podman rm -af || true
           sudo podman system prune --all --force --volumes --build || true
-          sudo rm -rf /var/tmp/container_images_* /var/tmp/podman*
+          sudo rm -rf /var/tmp/container_images_* /var/tmp/podman* /var/tmp/stereoscope-* /var/tmp/sbom-*
           sudo rm -f /tmp/chunked_image.tar /tmp/podman_load_output.txt ${{ github.workspace }}/rechunked_*.tar
           if [ "${{ needs.build_flavors.result }}" == "success" ]; then
             echo "✨ All flavors built successfully. Removing workspace..."

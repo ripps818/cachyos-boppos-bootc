@@ -84,6 +84,9 @@ jobs:
             fi
           done
           
+          # Fix permissions of files created by root inside the Podman container
+          sudo chown -R $USER:$USER build/
+          
           sort -u build/all-packages-temp.txt > build/all-packages.txt
           sort -u build/cachyos-packages-temp.txt > build/cachyos-packages.txt
           sort -u build/aur-packages-temp.txt > build/aur-packages.txt

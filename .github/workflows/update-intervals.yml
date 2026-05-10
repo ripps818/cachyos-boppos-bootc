@@ -104,3 +104,10 @@ jobs:
         with:
           path: scripts/package-intervals.json
           key: pkg-intervals-${{ hashFiles('scripts/package-intervals.json') }}
+
+      - name: Upload Package Intervals Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-intervals
+          path: scripts/package-intervals.json
+          retention-days: 7

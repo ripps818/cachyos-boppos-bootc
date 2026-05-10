@@ -295,10 +295,13 @@ jobs:
           # 2. Delete the massive chunkah tarballs
           sudo rm -f /tmp/chunked_image.tar /tmp/podman_load_output.txt ${{ github.workspace }}/rechunked_*.tar
           
-          # 3. Prune dangling (<none>) images but preserve the tagged base image
+          # 3. Force stop and remove any leftover containers from cancelled runs
+          sudo podman rm -af || true
+          
+          # 4. Prune dangling (<none>) images but preserve the tagged base image
           sudo podman system prune --force --volumes
           
-          # 4. Handle the GitHub workspace based on job status
+          # 5. Handle the GitHub workspace based on job status
           if [ "${{ job.status }}" == "success" ]; then
             echo "✨ Build succeeded. Wiping workspace source files..."
             sudo rm -rf ${{ github.workspace }}/*
@@ -524,6 +527,7 @@ jobs:
           echo "🧹 Sweeping up the heavy Podman assets..."
           sudo rm -rf /var/tmp/container_images_* /var/tmp/podman*
           sudo rm -f /tmp/chunked_image.tar /tmp/podman_load_output.txt ${{ github.workspace }}/rechunked_*.tar
+          sudo podman rm -af || true
           sudo podman system prune --all --force --volumes --build
           if [ "${{ needs.build_flavors.result }}" == "success" ]; then
             echo "✨ All flavors built successfully. Removing workspace..."

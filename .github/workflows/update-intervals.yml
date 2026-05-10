@@ -28,7 +28,7 @@ jobs:
           cache: 'pip'
 
       - name: Install Python dependencies
-        run: pip install aiohttp beautifulsoup4
+        run: pip install -r scripts/requirements.txt
 
       - name: Restore Package Intervals Cache
         uses: actions/cache/restore@v4

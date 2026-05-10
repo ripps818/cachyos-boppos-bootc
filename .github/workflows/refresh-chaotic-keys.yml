@@ -1,0 +1,26 @@
+name: Refresh Chaotic-AUR Keys
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Run weekly on Sundays
+  workflow_dispatch:
+
+jobs:
+  refresh-keys:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch Keys
+        run: |
+          mkdir -p files/keys
+          curl -s "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xF3B607488DB35A47" > files/keys/chaotic-1.asc
+          curl -s "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB" > files/keys/chaotic-2.asc
+          curl -s "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x3056513887B78AEB" > files/keys/chaotic-3.asc
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add files/keys/
+          git diff --staged --exit-code || (git commit -m "chore: refresh Chaotic-AUR GPG keys" && git push)

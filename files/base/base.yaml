@@ -147,8 +147,6 @@ networking:
   - openvpn
   - wireguard-tools
   - pptpclient
-  - mullvad-vpn
-  - mullvad-vpn-daemon
   - cloudflare-warp-bin
   - tailscale
   - dnsmasq

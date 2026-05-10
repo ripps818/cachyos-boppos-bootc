@@ -172,8 +172,6 @@ networking:
   monthly:
   - bluez-obex
   - iwd
-  - mullvad-vpn
-  - mullvad-vpn-daemon
   - networkmanager
   quarterly:
   - bluez

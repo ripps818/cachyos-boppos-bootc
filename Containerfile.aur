@@ -16,7 +16,8 @@ COPY mirrors/cachyos-v3-mirrorlist /etc/pacman.d/cachyos-v3-mirrorlist
 COPY mirrors/cachyos-v4-mirrorlist /etc/pacman.d/cachyos-v4-mirrorlist
 
 # Minimal setup: just enough to build packages
-RUN rm -rf /etc/pacman.d/gnupg && \
+RUN pacman -Sy --noconfirm --needed archlinux-keyring cachyos-keyring gnupg && \
+    rm -rf /etc/pacman.d/gnupg && \
     pacman-key --init && \
     echo "no-tty" >> /etc/pacman.d/gnupg/gpg.conf && \
     pacman-key --populate archlinux cachyos && \

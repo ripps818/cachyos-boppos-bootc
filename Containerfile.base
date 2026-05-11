@@ -55,7 +55,7 @@ RUN mkdir -p /etc/pacman.d/hooks && \
     ln -sf /dev/null /etc/pacman.d/hooks/archlinux-keyring-wkd-sync.hook
 
 RUN rm -rf /var/lib/pacman/sync/* && \
-    pacman -Syy --noconfirm cachyos-keyring archlinux-keyring && \
+    pacman -Syy --noconfirm && \
     pacman -Su --noconfirm && \
     { pkill -9 gpg-agent || true; pkill -9 dirmngr || true; pkill -9 keyboxd || true; pkill -9 scdaemon || true; }
 

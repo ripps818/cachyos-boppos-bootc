@@ -18,6 +18,8 @@ on:
 jobs:
   update-intervals:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,14 +38,6 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r scripts/requirements.txt
 
-      - name: Restore Package Intervals Cache
-        uses: actions/cache/restore@v4
-        with:
-          path: scripts/package-intervals.json
-          key: pkg-intervals-latest
-          restore-keys: |
-            pkg-intervals-
-
       - name: Generate Package Lists from All Images
         run: |
           mkdir -p build
@@ -60,7 +54,7 @@ jobs:
               echo "Attempting to download SBOM for $IMAGE_REF..."
               if cosign download sbom "$IMAGE_REF" > sbom-${FLAVOR}.json 2>/dev/null && [ -s sbom-${FLAVOR}.json ]; then
                 # Validate SBOM structure (handles both flat arrays and .packages objects)
-                if jq -e 'if type=="array" then .[0].name else .packages[0].name end' sbom-${FLAVOR}.json > /dev/null 2>&1; then
+                if jq -e 'if type=="array" then (.[0] | has("repository")) else (.packages[0] | has("repository")) end' sbom-${FLAVOR}.json > /dev/null 2>&1; then
                   echo "Successfully downloaded and validated SBOM."
                   jq -r 'if type=="array" then .[] else .packages[] end | .name' sbom-${FLAVOR}.json >> build/all-packages-temp.txt
                   jq -r 'if type=="array" then .[] else .packages[] end | select(.repository != null and (.repository | test("cachyos"))) | .name' sbom-${FLAVOR}.json >> build/cachyos-packages-temp.txt 2>/dev/null || true
@@ -77,12 +71,15 @@ jobs:
             
             if [ "$USE_PODMAN" == "true" ]; then
               echo "Extracting packages using Podman container fallback..."
-              sudo podman run --rm -v ${{ github.workspace }}/scripts:/scripts:ro -v ${{ github.workspace }}/build:/build:rw "$IMAGE_REF" bash -c "/scripts/generate-package-list.sh"
+              sudo podman run --rm -v ${{ github.workspace }}/scripts:/scripts:ro -v ${{ github.workspace }}/build:/build:rw "$IMAGE_REF" bash /scripts/extract-ci-pkg-lists.sh
               cat build/all-packages.txt >> build/all-packages-temp.txt 2>/dev/null || true
               cat build/cachyos-packages.txt >> build/cachyos-packages-temp.txt 2>/dev/null || true
               cat build/aur-packages.txt >> build/aur-packages-temp.txt 2>/dev/null || true
             fi
           done
+          
+          # Fix permissions of files created by root inside the Podman container
+          sudo chown -R $USER:$USER build/
           
           sort -u build/all-packages-temp.txt > build/all-packages.txt
           sort -u build/cachyos-packages-temp.txt > build/cachyos-packages.txt
@@ -99,8 +96,9 @@ jobs:
             --max-age-days ${{ github.event.inputs.max_age || '30' }} \
             --concurrency 10
 
-      - name: Save Package Intervals to Cache
-        uses: actions/cache/save@v4
-        with:
-          path: scripts/package-intervals.json
-          key: pkg-intervals-${{ hashFiles('scripts/package-intervals.json') }}
+      - name: Commit and Push Package Intervals
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f scripts/package-intervals.json
+          git diff --staged --exit-code || (git commit -m "chore: update package intervals" && git push)

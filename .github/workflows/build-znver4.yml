@@ -81,7 +81,7 @@ jobs:
           fi
           
           # 2. Nuke leftover /tmp files and orphaned Podman extraction directories
-          sudo rm -rf /tmp/chunked_image.tar /tmp/podman_load_output.txt /tmp/tmp.* /var/tmp/container_images_* /var/tmp/podman* /var/tmp/cachyos-base-*.tar
+          sudo rm -rf /tmp/chunked_image.tar /tmp/podman_load_output.txt /tmp/tmp.* /var/tmp/container_images_* /var/tmp/podman* /var/tmp/cachyos-base-*.tar /var/tmp/stereoscope-* /var/tmp/sbom-*
           
           # 3. Prune dangling Podman data AND aggressively wipe the build cache
           sudo podman system prune --all --force --volumes --build
@@ -102,6 +102,13 @@ jobs:
       - name: Checkout
         if: steps.check_compatibility.outputs.should_skip != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          submodules: recursive
+
+      - name: Ensure Package Intervals JSON exists
+        if: steps.check_compatibility.outputs.should_skip != 'true'
+        run: |
+          if [ ! -f scripts/package-intervals.json ]; then echo "{}" > scripts/package-intervals.json; fi
 
       - name: Get current date
         id: date
@@ -244,12 +251,6 @@ jobs:
           sudo podman tag "localhost/$CURRENT_IMAGE_NAME:$DEFAULT_TAG" "${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}"
           echo "::endgroup::"
 
-      - name: Export Base Image
-        if: steps.check_compatibility.outputs.should_skip != 'true'
-        run: |
-          echo "Saving base image to persistent tarball..."
-          sudo podman save "${IMAGE_REGISTRY}/cachyos-base:${{ env.DEFAULT_TAG }}" -o /var/tmp/cachyos-base-${{ github.sha }}.tar
-
       - name: Prune Pacman Cache
         if: steps.check_compatibility.outputs.should_skip != 'true' && github.event_name != 'pull_request'
         run: |
@@ -283,16 +284,19 @@ jobs:
         run: |
           echo "🧹 Sweeping up the heavy Podman assets..."
           
-          # 1. Obliterate orphaned Podman extraction directories (The 128GB Silent Killer)
-          sudo rm -rf /var/tmp/container_images_* /var/tmp/podman*
+          # 1. Force stop and remove any leftover containers from cancelled runs
+          sudo podman rm -af || true
           
-          # 2. Delete the massive chunkah tarballs
+          # 2. Prune dangling (<none>) images but preserve the tagged base image
+          sudo podman system prune --force --volumes || true
+          
+          # 3. Obliterate orphaned Podman extraction directories (The 128GB Silent Killer)
+          sudo rm -rf /var/tmp/container_images_* /var/tmp/podman* /var/tmp/stereoscope-* /var/tmp/sbom-*
+          
+          # 4. Delete the massive chunkah tarballs
           sudo rm -f /tmp/chunked_image.tar /tmp/podman_load_output.txt ${{ github.workspace }}/rechunked_*.tar
           
-          # 3. Prune dangling (<none>) images AND the intermediate build cache
-          sudo podman system prune --all --force --volumes --build
-          
-          # 4. Handle the GitHub workspace based on job status
+          # 5. Handle the GitHub workspace based on job status
           if [ "${{ job.status }}" == "success" ]; then
             echo "✨ Build succeeded. Wiping workspace source files..."
             sudo rm -rf ${{ github.workspace }}/* ${{ github.workspace }}/.[!.]* 2>/dev/null || true
@@ -325,6 +329,12 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          submodules: recursive
+
+      - name: Ensure Package Intervals JSON exists
+        run: |
+          if [ ! -f scripts/package-intervals.json ]; then echo "{}" > scripts/package-intervals.json; fi
 
       - name: Get current date
         id: date
@@ -358,11 +368,6 @@ jobs:
             containers.bootc=1
           sep-tags: " "
           sep-annotations: " "
-
-      - name: Load Base Image
-        run: |
-          echo "Loading base image into Podman..."
-          sudo podman load -i /var/tmp/cachyos-base-${{ github.sha }}.tar
 
       - name: Login to GitHub Container Registry
         env:
@@ -410,7 +415,7 @@ jobs:
           PODMAN_OPTS=""
           if [ "${{ github.event.inputs.unconfined_build }}" == "true" ]; then PODMAN_OPTS="--security-opt seccomp=unconfined"; fi
 
-          sudo podman run $PODMAN_OPTS --rm --network=none --mount=type=image,source=$IMAGE_REF,target=/chunkah -e SOURCE_DATE_EPOCH=0 -e CHUNKAH_CONFIG_STR="$(sudo podman inspect $IMAGE_REF)" quay.io/coreos/chunkah build --compressed --label containers.bootc=1 --max-layers 128 --prune /var/cache/ --prune /var/log/ --prune /tmp/ --prune /var/tmp/ > "$ARCHIVE_PATH"
+          sudo podman run $PODMAN_OPTS --rm --network=none --mount=type=image,source=$IMAGE_REF,target=/chunkah -e SOURCE_DATE_EPOCH=0 -e CHUNKAH_CONFIG_STR="$(sudo podman inspect $IMAGE_REF)" quay.io/coreos/chunkah build --compressed --label containers.bootc=1 --max-layers 400 --prune /var/cache/ --prune /var/log/ --prune /tmp/ --prune /var/tmp/ > "$ARCHIVE_PATH"
 
           sudo podman rmi -f "$IMAGE_REF"
           sudo podman system prune -f
@@ -443,11 +448,20 @@ jobs:
           set -ex
           FLAVOR="${{ matrix.flavor }}"
           CURRENT_IMAGE_NAME="cachyos-${FLAVOR}"
+          SOURCE_IMAGE="containers-storage:localhost/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}"
           
           for tag in $IMAGE_TAGS; do
+            DEST_IMAGE="docker://${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${tag}"
             SUCCESS=false
             for i in $(seq "${MAX_RETRIES}"); do
-              if sudo podman push "localhost/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}" "${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${tag}"; then SUCCESS=true; break; fi
+              # Use skopeo to copy with zstd compression for smaller images
+              if sudo skopeo copy \
+                  --dest-compress-format zstd:chunked \
+                  --dest-compress-level 6 \
+                  "$SOURCE_IMAGE" "$DEST_IMAGE"; then
+                SUCCESS=true
+                break
+              fi
               echo "Push failed, retrying in $((5 * i)) seconds..."; sleep $((5 * i))
             done
             if [ "$SUCCESS" = "false" ]; then exit 1; fi
@@ -462,7 +476,7 @@ jobs:
           echo "${CURRENT_IMAGE_NAME}=${REMOTE_DIGEST}" >> digests.env
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
         if: github.event_name != 'pull_request'
 
       - name: Attach SBOM and Sign container image
@@ -495,14 +509,14 @@ jobs:
       - name: Clean Workspace & Podman Storage
         run: |
           echo "🧹 Sweeping up the heavy Podman assets..."
-          sudo rm -rf /var/tmp/container_images_* /var/tmp/podman*
+          sudo podman rm -af || true
+          sudo podman system prune --all --force --volumes --build || true
+          sudo rm -rf /var/tmp/container_images_* /var/tmp/podman* /var/tmp/stereoscope-* /var/tmp/sbom-*
           sudo rm -f /tmp/chunked_image.tar /tmp/podman_load_output.txt ${{ github.workspace }}/rechunked_*.tar
-          sudo podman system prune --all --force --volumes --build
           if [ "${{ needs.build_flavors.result }}" == "success" ]; then
-            echo "✨ All flavors built successfully. Removing base tarball and workspace..."
-            sudo rm -f /var/tmp/cachyos-base-${{ github.sha }}.tar
+            echo "✨ All flavors built successfully. Removing workspace..."
             sudo rm -rf ${{ github.workspace }}/* ${{ github.workspace }}/.[!.]* || true
           else
-            echo "⚠️ Some flavors failed. Preserving base tarball for retry."
+            echo "⚠️ Some flavors failed. Preserving workspace for debug."
           fi
           df -h /

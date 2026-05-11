@@ -15,6 +15,16 @@ from bs4 import BeautifulSoup
 
 ALA_BASE = "https://archive.archlinux.org/packages"
 CACHY_GITHUB_API = "https://api.github.com/repos/CachyOS/CachyOS-PKGBUILDS/commits"
+CACHY_MIRROR_BASE = "https://mirror.cachyos.org/repo"
+CACHY_ARCHIVE_BASE = "https://archive.cachyos.org/archive"
+CACHY_REPOS = [
+    ("x86_64_v4", "cachyos-v4"),
+    ("x86_64_v4", "cachyos-extra-v4"),
+    ("x86_64_v4", "cachyos-core-v4"),
+    ("x86_64", "cachyos"),
+    ("x86_64", "cachyos-extra"),
+    ("x86_64", "cachyos-core")
+]
 
 def get_bucket(median_days, num_releases):
     if num_releases < 3:
@@ -44,6 +54,47 @@ async def fetch_with_backoff(session, url, headers=None, max_retries=3):
         await asyncio.sleep(2 ** attempt)
     return None
 
+async def fetch_all_cachyos_data(session):
+    """Bulk fetch all CachyOS mirrors and archives once to build a local historical database."""
+    cachy_data = {}
+    urls_to_fetch = {f"{CACHY_MIRROR_BASE}/{arch}/{repo}/" for arch, repo in CACHY_REPOS}
+    urls_to_fetch.update({
+        f"{CACHY_ARCHIVE_BASE}/cachyos/",
+        f"{CACHY_ARCHIVE_BASE}/cachyos-v3/",
+        f"{CACHY_ARCHIVE_BASE}/cachyos-v4/"
+    })
+
+    logging.info(f"Bulk fetching {len(urls_to_fetch)} CachyOS directory indexes...")
+    
+    # Resilient match for both table-based and standard nginx <pre> autoindexes
+    pattern = re.compile(r'href="([^"]+\.pkg\.tar\.zst)".*?(\d{2,4}-[a-zA-Z]{3}-\d{2,4} \d{2}:\d{2})')
+    
+    html_pages = await asyncio.gather(*(fetch_with_backoff(session, url) for url in urls_to_fetch))
+    
+    for html in html_pages:
+        if not html: continue
+        matches = pattern.findall(html)
+        for filename, date_str in matches:
+            pkg_match = re.match(r'^([a-zA-Z0-9_\-\.\+]+?)-\d', filename)
+            if pkg_match:
+                pkg_name = pkg_match.group(1)
+                try:
+                    # Handle both YYYY-MMM-dd and dd-MMM-YYYY formats gracefully
+                    if len(date_str.split('-')[0]) == 4:
+                        dt = datetime.strptime(date_str, "%Y-%b-%d %H:%M")
+                    else:
+                        dt = datetime.strptime(date_str, "%d-%b-%Y %H:%M")
+                        
+                    if pkg_name not in cachy_data:
+                        cachy_data[pkg_name] = set()
+                    cachy_data[pkg_name].add(dt)
+                except ValueError:
+                    pass
+                    
+    for pkg, dates in cachy_data.items():
+        cachy_data[pkg] = sorted(list(dates))
+    return cachy_data
+
 async def analyze_arch_package(session, pkg_name):
     first_letter = pkg_name[0].lower()
     url = f"{ALA_BASE}/{first_letter}/{pkg_name}/"
@@ -51,19 +102,26 @@ async def analyze_arch_package(session, pkg_name):
     html = await fetch_with_backoff(session, url)
     if not html: return [], "ala_not_found"
     
-    soup = BeautifulSoup(html, 'html.parser')
+    # Arch Linux Archive uses standard nginx autoindex inside a <pre> tag, not <td>.
+    date_pattern = re.compile(r'(\d{2}-[a-zA-Z]{3}-\d{4} \d{2}:\d{2})')
+    matches = date_pattern.findall(html)
+    
     dates = []
-    for date_td in soup.find_all('td', class_='date'):
+    for date_str in matches:
         try:
-            dt = datetime.strptime(date_td.text.strip(), "%Y-%b-%d %H:%M")
+            dt = datetime.strptime(date_str, "%d-%b-%Y %H:%M")
             dates.append(dt)
-        except ValueError:
-            pass
+        except ValueError as e:
+            logging.debug(f"[{pkg_name}] Failed to parse ALA date '{date_str}': {e}")
             
     dates = sorted(list(set(dates)))
     return dates, "ala"
 
-async def analyze_cachy_package(session, pkg_name):
+async def analyze_cachy_package(session, pkg_name, cachy_bulk_data):
+    dates = cachy_bulk_data.get(pkg_name, [])
+    if dates:
+        return dates, "cachyos_mirror"
+        
     headers = {'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'BoppOS-Chunkah'}
     if token := os.environ.get('GITHUB_TOKEN'):
         headers['Authorization'] = f'Bearer {token}'
@@ -132,7 +190,7 @@ async def analyze_aur_package(session, pkg_name):
     dates = sorted(list(set(dates)))
     return dates, "aur"
 
-async def process_package(session, pkg, is_cachyos, is_aur, cache, max_age, semaphore):
+async def process_package(session, pkg, is_cachyos, is_aur, cache, max_age, semaphore, cachy_bulk_data):
     async with semaphore:
         now = datetime.now(timezone.utc)
         
@@ -148,7 +206,7 @@ async def process_package(session, pkg, is_cachyos, is_aur, cache, max_age, sema
         logging.debug(f"Fetching cadence for {pkg} (CachyOS: {is_cachyos})")
         
         if is_cachyos:
-            dates, source = await analyze_cachy_package(session, pkg)
+            dates, source = await analyze_cachy_package(session, pkg, cachy_bulk_data)
             if len(dates) < 2: # Fallback to ALA if CachyOS-specific check fails
                 dates, source = await analyze_arch_package(session, pkg)
         elif is_aur:
@@ -165,8 +223,16 @@ async def process_package(session, pkg, is_cachyos, is_aur, cache, max_age, sema
         interval_lbl = get_bucket(median_days, num_releases)
         
         if num_releases < 3:
-            logging.warning(f"[{pkg}] Only {num_releases} historical releases found. Defaulting to weekly.")
-            
+            if num_releases == 1:
+                age_days = (now - dates[0].replace(tzinfo=timezone.utc)).days
+                if age_days >= 365:
+                    interval_lbl = "yearly"
+                    logging.debug(f"[{pkg}] Single release is {age_days} days old. Bucketing as yearly.")
+                else:
+                    logging.warning(f"[{pkg}] Only 1 recent release found. Defaulting to weekly.")
+            else:
+                logging.warning(f"[{pkg}] Only {num_releases} historical releases found. Defaulting to weekly.")
+
         result = {
             "interval": interval_lbl,
             "avg_days": round(median_days, 2),
@@ -211,11 +277,13 @@ async def main():
     new_cache = {}
     
     async with aiohttp.ClientSession() as session:
+        cachy_bulk_data = await fetch_all_cachyos_data(session)
+        
         tasks = []
         for pkg in pkg_list:
             is_cachy = pkg in cachy_pkgs
             is_aur = pkg in aur_pkgs
-            tasks.append(process_package(session, pkg, is_cachy, is_aur, cache, args.max_age_days, semaphore))
+            tasks.append(process_package(session, pkg, is_cachy, is_aur, cache, args.max_age_days, semaphore, cachy_bulk_data))
             
         results = await asyncio.gather(*tasks)
         

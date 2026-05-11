@@ -29,15 +29,22 @@ COPY --from=localhost/aur-builder:${TARGET_CPU_MARCH} /etc/pacman.conf /etc/pacm
 COPY --from=localhost/aur-builder:${TARGET_CPU_MARCH} /etc/pacman.d /etc/pacman.d
 COPY --from=localhost/aur-builder:${TARGET_CPU_MARCH} /usr/share/pacman/keyrings /usr/share/pacman/keyrings
 
+COPY files/keys/ /tmp/keys/
+
 # Re-initialize and trust keys in the system stage to avoid GPGME environment issues
-RUN rm -rf /etc/pacman.d/gnupg && \
+RUN pacman -Sy --noconfirm --needed archlinux-keyring cachyos-keyring gnupg curl && \
+    rm -rf /etc/pacman.d/gnupg && \
     pacman-key --init && \
     echo "no-tty" >> /etc/pacman.d/gnupg/gpg.conf && \
     pacman-key --populate archlinux cachyos && \
-    pacman-key --recv-keys F3B607488DB35A47 5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB 3056513887B78AEB && \
+    for key in /tmp/keys/*.asc; do [ -f "$key" ] && pacman-key --add "$key" || true; done && \
+    curl -s --max-time 10 "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xF3B607488DB35A47" | pacman-key --add - || echo "Key refresh failed, using committed copy" && \
+    curl -s --max-time 10 "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB" | pacman-key --add - || echo "Key refresh failed, using committed copy" && \
+    curl -s --max-time 10 "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x3056513887B78AEB" | pacman-key --add - || echo "Key refresh failed, using committed copy" && \
     pacman-key --lsign-key F3B607488DB35A47 && \
     pacman-key --lsign-key 5DE6BF3EBC86402E7A5C5D241FA48C960F9604CB && \
     pacman-key --lsign-key 3056513887B78AEB && \
+    rm -rf /tmp/keys && \
     { pkill -9 gpg-agent || true; pkill -9 dirmngr || true; pkill -9 keyboxd || true; pkill -9 scdaemon || true; }
 
 RUN mkdir -p /etc/pacman.d/hooks && \
@@ -84,15 +91,10 @@ RUN sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
 RUN mkdir -p /usr/lib/dracut/dracut.conf.d && \
     echo 'i18n_vars="/usr/share/kbd/consolefonts  /usr/share/kbd/keymaps"' >> /usr/lib/dracut/dracut.conf.d/boppos-cachyos.conf
 
-# Backfill user.component attributes for the original CachyOS base image packages.
-# Subsequent package installs will be handled automatically by the ALPM hook.
-RUN COMPONENT_TAG="default-base" pacman -Qq | /usr/libexec/assign-usercomponent.sh
-
 # ==========================================
 # CPU ARCHITECTURE REPOSITORY SETUP
 # ==========================================
-RUN export COMPONENT_TAG="arch-optimizations" && \
-    rm -f /usr/lib/sysimage/cache/pacman/pkg/lua* && \
+RUN rm -f /usr/lib/sysimage/cache/pacman/pkg/lua* && \
     rm -f /usr/lib/sysimage/cache/pacman/pkg/*.part && \
     if ! mountpoint -q /usr/lib/sysimage/cache/pacman/pkg; then \
         pacman -Sc --noconfirm ; \
@@ -115,29 +117,25 @@ RUN --mount=type=tmpfs,dst=/run \
     pacman -Rdd --noconfirm pulseaudio pulseaudio-bluetooth || true
 
 RUN --mount=type=tmpfs,dst=/run \
-    COMPONENT_TAG="install-python" pacman -Sy --noconfirm --ask 4 --needed \
+    pacman -Sy --noconfirm --ask 4 --needed \
     python python-yaml yq
 
 RUN --mount=type=tmpfs,dst=/run \
-    COMPONENT_TAG="install-mesa" pacman -S --noconfirm --ask 4 --needed \
+    pacman -S --noconfirm --ask 4 --needed \
     mesa lib32-mesa mesa-utils intel-media-driver libdisplay-info lib32-libdisplay-info
 
 RUN --mount=type=tmpfs,dst=/run \
-    COMPONENT_TAG="install-vulkan" pacman -S --noconfirm --ask 4 --needed \
+    pacman -S --noconfirm --ask 4 --needed \
     vulkan-radeon lib32-vulkan-radeon vulkan-intel lib32-vulkan-intel \
     vulkan-nouveau lib32-vulkan-nouveau vulkan-mesa-layers lib32-vulkan-mesa-layers \
     vulkan-icd-loader lib32-vulkan-icd-loader
 
 COPY scripts/install_packages.sh /tmp/install_packages.sh
-COPY files/base/base-analyzed.yaml /tmp/base-analyzed.yaml
+COPY files/base/base.yaml /tmp/base.yaml
 
 RUN --mount=type=tmpfs,dst=/run \
     chmod +x /tmp/install_packages.sh && \
-    /tmp/install_packages.sh /tmp/base-analyzed.yaml
-
-# Generate package list for diffing
-RUN chmod +x /usr/share/boppos/generate-package-list.sh && \
-    /usr/share/boppos/generate-package-list.sh
+    /tmp/install_packages.sh /tmp/base.yaml
 
 # ==========================================
 # POST-INSTALL CONFIGURATION
@@ -149,7 +147,7 @@ RUN chmod -R 0755 /usr/bin /usr/share/libalpm/scripts
 
 # Install AUR packages from Stage 1
 COPY --from=localhost/aur-builder:${TARGET_CPU_MARCH} /export-pkgs/ /tmp/aur-pkgs/
-RUN COMPONENT_TAG="aur-packages" pacman -U --noconfirm /tmp/aur-pkgs/*.pkg.tar.zst && \
+RUN pacman -U --noconfirm /tmp/aur-pkgs/*.pkg.tar.zst && \
     rm -rf /tmp/aur-pkgs && \
     if [ -e /usr/etc ]; then \
         echo "Workaround: mitigating rogue /usr/etc to satisfy bootc..." && \
@@ -219,6 +217,12 @@ RUN mkdir -p /usr/lib/opt && \
         mv /opt/* /usr/lib/opt/ || true; \
     fi
 
+# Apply update intervals before bootc cleanup
+COPY scripts/package-intervals.json /tmp/package-intervals.json
+COPY scripts/apply-update-intervals.sh /tmp/apply-update-intervals.sh
+RUN chmod +x /tmp/apply-update-intervals.sh && \
+    /tmp/apply-update-intervals.sh /tmp/package-intervals.json /
+
 # Final system setup and cleanup
 RUN sed -i 's|^HOME=.*|HOME=/var/home|' "/etc/default/useradd" && \
     mkdir -p /run /tmp && \
@@ -238,6 +242,9 @@ RUN ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime
 # Add repository security keys
 RUN mkdir -p /etc/pki/containers
 COPY cosign.pub /etc/pki/containers/bopp-os.pub
+
+# Make the package list generator executable for downstream flavors
+RUN chmod +x /usr/share/boppos/generate-package-list.sh
 
 RUN rm -f /README.md
 LABEL containers.bootc=1

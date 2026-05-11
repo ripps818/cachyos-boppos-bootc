@@ -1,5 +1,4 @@
 gnome-core:
-  - xorg-xwayland
   - mutter
   - gdm
   - gnome-session
@@ -13,7 +12,6 @@ gnome-core:
   - nautilus
   - gnome-console
   - gnome-text-editor
-  - ptyxis
   - tracker3
   - tracker3-miners
 gnome-utilities:
@@ -68,9 +66,4 @@ gnome-webdav-server:
   - apr
   - apr-util
 gnome-meta:
-  - gnome-shell
-  - baobab
-  - gnome-characters
-  - gnome-clocks
-  - gnome-font-viewer
   - gnome

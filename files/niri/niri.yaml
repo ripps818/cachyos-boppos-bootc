@@ -9,7 +9,6 @@ niri-core:
   - alacritty
   - polkit-gnome
   - mako
-  - librsvg
   - qt6-svg
 niri-utilities:
   - nautilus

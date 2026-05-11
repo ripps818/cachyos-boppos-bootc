@@ -1,40 +1,22 @@
 kde-core:
-  - xorg-xwayland
   - qt5-wayland
   - qt6-wayland
-  - kwin
   - systemsettings
-  - kscreenlocker
-  - discover
-  - plasma-login-manager
   - powerdevil
-  - kscreen
-  - polkit-kde-agent
   - xdg-desktop-portal
   - xdg-desktop-portal-kde
   - xdg-desktop-portal-gtk
   - colord-kde
 kde-integration:
-  - plasma-pa
-  - plasma-nm
-  - kwallet-pam
   - udisks2
   - python-gobject
   - kdeplasma-addons
   - kio-extras
   - kio-fuse
   - kio-admin
-  - flatpak-kcm
-  - xdg-utils
-  - libappimage
   - baloo
   - kwayland-integration
   - plasma5-integration
-  - bluedevil
-  - plasma-firewall
-  - plasma-thunderbolt
-  - plasma-browser-integration
-  - kinfocenter
   - xsettingsd
   - plymouth-kcm
 kde-utilities:
@@ -49,8 +31,6 @@ kde-utilities:
   - okular
   - kcalc
   - partitionmanager
-  - plasma-disks
-  - plasma-systemmonitor
   - kdialog
   - filelight
   - yakuake
@@ -63,14 +43,11 @@ kde-utilities:
   - tesseract
   - tesseract-data-eng
 kde-media:
-  - ffmpegthumbnailer
   - ffmpegthumbs
   - kdegraphics-thumbnailers
   - kimageformats
   - qt6-imageformats
 kde-themes-aesthetics:
-  - breeze-gtk
-  - kde-gtk-config
   - appmenu-gtk-module
   - cachyos-kde-settings
   - cachyos-themes-sddm

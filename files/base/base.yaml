@@ -42,7 +42,6 @@ bootc:
   - dracut
   - ostree
   - skopeo
-  - containers-common
   - btrfs-progs
   - e2fsprogs
   - xfsprogs
@@ -59,7 +58,6 @@ fonts:
   - ttf-nerd-fonts-symbols-mono
   - awesome-terminal-fonts
   - cantarell-fonts
-  - ttf-liberation
   - ttf-opensans
 filesystems:
   - fuse2
@@ -120,7 +118,6 @@ audio:
   - wireplumber
   - pavucontrol
   - alsa-utils
-  - alsa-plugins
 firmware:
   - amd-ucode
   - intel-ucode
@@ -205,7 +202,6 @@ cli-utilities:
   - procps-ng
   - curl
   - wget
-  - file
   - man-db
   - man-pages
   - openssh
@@ -226,11 +222,6 @@ text-editors-ides:
   - meld
   - vim
 devel-base:
-  - gcc
-  - binutils
-  - make
-  - fakeroot
-  - patch
   - git
   - git-lfs
   - tig
@@ -297,7 +288,6 @@ gaming-core:
   - lib32-gcc-libs
   - lib32-systemd
   - lib32-libx11
-  - lib32-alsa-plugins
   - winboat
   - gamescope-session-git
   - sunshine

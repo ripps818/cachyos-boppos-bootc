@@ -468,7 +468,7 @@ jobs:
                sudo skopeo copy \
                 --dest-compress-format zstd:chunked \
                 --dest-compress-level 6 \
-                docker-archive:/dev/stdin \
+                oci-archive:/dev/stdin \
                 "$DEFAULT_DEST"; then
               SUCCESS=true
               break

@@ -47,10 +47,17 @@ gnome-extensions:
   - gnome-shell-extension-caffeine
   - gnome-shell-extension-vitals
   - gnome-shell-extension-bing-wallpaper
+  - gnome-shell-extension-clipboard-indicator
+gnome-additions:
+  - gnome-online-accounts
+  - xdg-user-dirs-gtk
+  - gsound
+  - gnome-remote-desktop
+  - snapshot
+  - decibels
 gnome-media:
   - sushi
   - showtime
-  - celluloid
 gnome-webkit:
   - webkitgtk-6.0
   - webkit2gtk-4.1

@@ -27,9 +27,6 @@ kde-utilities:
   - ark
   - spectacle
   - kdeconnect
-  - gwenview
-  - okular
-  - kcalc
   - partitionmanager
   - kdialog
   - filelight
@@ -53,6 +50,20 @@ kde-themes-aesthetics:
   - cachyos-themes-sddm
   - cachyos-iridescent-kde
   - char-white
+kde-additions:
+  - networkmanager-qt
+  - kdepim-addons
+  - plasma-workspace-wallpapers
+  - baloo-widgets
+  - audiocd-kio
+  - print-manager
+  - kdenetwork-filesharing
+  - kio-gdrive
+  - packagekit-qt6
+  - plasmazones
+  - kid3
+  - kruler
+  - isoimagewriter
 kde-meta:
   - plasma-desktop
   - plasma-workspace

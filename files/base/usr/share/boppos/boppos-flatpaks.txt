@@ -14,3 +14,4 @@ org.kde.gwenview
 org.kde.kcalc
 io.github.kolunmi.Bazaar
 org.jeffvli.feishin
+io.github.celluloid_player.Celluloid

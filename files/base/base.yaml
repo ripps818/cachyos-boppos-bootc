@@ -75,6 +75,7 @@ filesystems:
   - smartmontools
   - nilfs-utils
   - dmraid
+  - autofs
 archiving:
   - unp
   - unarj
@@ -149,6 +150,8 @@ networking:
   - dnsmasq
   - xl2tpd
   - bluez-hid2hci
+  - mullvad-vpn-bin
+  - mullvad-vpn-daemon-bin
 hardware-management:
   - power-profiles-daemon
   - cpupower
@@ -230,7 +233,6 @@ devel-base:
   - just
   - cosign
   - skopeo
-  - containers-common
 containers:
   - docker
   - docker-compose
@@ -268,17 +270,16 @@ media-video:
   - gst-libav
   - mpv-git
   - ffmpeg
-  - vlc
   - gpu-screen-recorder-ui
   - ffmpegthumbnailer
   - gst-plugin-pipewire
   - gst-plugins-bad
   - gst-plugins-ugly
-  - vlc-plugins-all
   - yt-dlp
 gaming-core:
   - xorg-xwininfo
   - xdotool
+  - scopebuddy-git
   - yad
   - mangohud
   - lutris

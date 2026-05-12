@@ -105,6 +105,11 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Update AUR Submodules
+        if: steps.check_compatibility.outputs.should_skip != 'true'
+        run: |
+          git submodule update --remote -- files/aur/pkgbuilds/ || true
+
       - name: Ensure Package Intervals JSON exists
         if: steps.check_compatibility.outputs.should_skip != 'true'
         run: |

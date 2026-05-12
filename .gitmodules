@@ -10,3 +10,6 @@
 [submodule "files/aur/pkgbuilds/mullvad-vpn-bin"]
 	path = files/aur/pkgbuilds/mullvad-vpn-bin
 	url = https://aur.archlinux.org/mullvad-vpn-bin.git
+[submodule "files/aur/pkgbuilds/gnome-shell-extension-clipboard-indicator"]
+	path = files/aur/pkgbuilds/gnome-shell-extension-clipboard-indicator
+	url = https://aur.archlinux.org/gnome-shell-extension-clipboard-indicator.git

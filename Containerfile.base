@@ -115,9 +115,9 @@ RUN rm -f /usr/lib/sysimage/cache/pacman/pkg/lua* && \
 # ==========================================
 
 # Setup Local AUR Repository
-COPY --from=localhost/aur-builder:${TARGET_CPU_MARCH} /export-pkgs/ /var/cache/pacman/boppos-aur/
-RUN repo-add /var/cache/pacman/boppos-aur/boppos-aur.db.tar.gz /var/cache/pacman/boppos-aur/*.pkg.tar.zst && \
-    echo -e '\n[boppos-aur]\nSigLevel = Optional TrustAll\nServer = file:///var/cache/pacman/boppos-aur\n' >> /etc/pacman.conf && \
+COPY --from=localhost/aur-builder:${TARGET_CPU_MARCH} /export-pkgs/ /usr/lib/boppos-aur/
+RUN repo-add /usr/lib/boppos-aur/boppos-aur.db.tar.gz /usr/lib/boppos-aur/*.pkg.tar.zst && \
+    echo -e '\n[boppos-aur]\nSigLevel = Optional TrustAll\nServer = file:///usr/lib/boppos-aur\n' >> /etc/pacman.conf && \
     pacman -Sy
 
 RUN --mount=type=tmpfs,dst=/run \

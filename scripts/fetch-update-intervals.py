@@ -7,6 +7,7 @@ import os
 import statistics
 import re
 import sys
+from urllib.parse import unquote
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,7 +15,6 @@ import aiohttp
 from bs4 import BeautifulSoup
 
 ALA_BASE = "https://archive.archlinux.org/packages"
-CACHY_GITHUB_API = "https://api.github.com/repos/CachyOS/CachyOS-PKGBUILDS/commits"
 CACHY_MIRROR_BASE = "https://mirror.cachyos.org/repo"
 CACHY_ARCHIVE_BASE = "https://archive.cachyos.org/archive"
 CACHY_REPOS = [
@@ -75,24 +75,26 @@ async def fetch_all_cachyos_data(session):
         if not html: continue
         matches = pattern.findall(html)
         for filename, date_str in matches:
-            pkg_match = re.match(r'^([a-zA-Z0-9_\-\.\+]+?)-\d', filename)
-            if pkg_match:
-                pkg_name = pkg_match.group(1)
+            # Unquote URL encoding (e.g., %3A -> :) to accurately parse epochs and symbols
+            filename = unquote(filename)
+            m = re.match(r'^(.+)-([^-]+-[^-]+)-(?:x86_64|x86_64_v3|x86_64_v4|znver4|aarch64|any)\.pkg\.tar\.[a-z]+$', filename)
+            if m:
+                pkg_name = m.group(1)
+                pkg_version = m.group(2)
                 try:
-                    # Handle both YYYY-MMM-dd and dd-MMM-YYYY formats gracefully
                     if len(date_str.split('-')[0]) == 4:
-                        dt = datetime.strptime(date_str, "%Y-%b-%d %H:%M")
+                        dt = datetime.strptime(date_str, "%Y-%b-%d %H:%M").replace(tzinfo=timezone.utc)
                     else:
-                        dt = datetime.strptime(date_str, "%d-%b-%Y %H:%M")
+                        dt = datetime.strptime(date_str, "%d-%b-%Y %H:%M").replace(tzinfo=timezone.utc)
                         
                     if pkg_name not in cachy_data:
-                        cachy_data[pkg_name] = set()
-                    cachy_data[pkg_name].add(dt)
+                        cachy_data[pkg_name] = {}
+                    # Keep the oldest timestamp representing the original release date of this version
+                    if pkg_version not in cachy_data[pkg_name] or cachy_data[pkg_name][pkg_version] > dt:
+                        cachy_data[pkg_name][pkg_version] = dt
                 except ValueError:
                     pass
                     
-    for pkg, dates in cachy_data.items():
-        cachy_data[pkg] = sorted(list(dates))
     return cachy_data
 
 async def analyze_arch_package(session, pkg_name):
@@ -100,140 +102,167 @@ async def analyze_arch_package(session, pkg_name):
     url = f"{ALA_BASE}/{first_letter}/{pkg_name}/"
     
     html = await fetch_with_backoff(session, url)
-    if not html: return [], "ala_not_found"
+    if not html: return {}, "ala_not_found"
     
-    # Arch Linux Archive uses standard nginx autoindex inside a <pre> tag, not <td>.
-    date_pattern = re.compile(r'(\d{2}-[a-zA-Z]{3}-\d{4} \d{2}:\d{2})')
-    matches = date_pattern.findall(html)
+    pattern = re.compile(r'href="([^"]+\.pkg\.tar\.[a-z]+)".*?(\d{2}-[a-zA-Z]{3}-\d{4} \d{2}:\d{2})')
+    matches = pattern.findall(html)
     
-    dates = []
-    for date_str in matches:
-        try:
-            dt = datetime.strptime(date_str, "%d-%b-%Y %H:%M")
-            dates.append(dt)
-        except ValueError as e:
-            logging.debug(f"[{pkg_name}] Failed to parse ALA date '{date_str}': {e}")
+    history = {}
+    for filename, date_str in matches:
+        filename = unquote(filename)
+        m = re.match(r'^(.+)-([^-]+-[^-]+)-(?:x86_64|x86_64_v3|x86_64_v4|znver4|aarch64|any)\.pkg\.tar\.[a-z]+$', filename)
+        if m and m.group(1) == pkg_name:
+            version = m.group(2)
+            try:
+                dt = datetime.strptime(date_str, "%d-%b-%Y %H:%M").replace(tzinfo=timezone.utc)
+                if version not in history or history[version] > dt:
+                    history[version] = dt
+            except ValueError:
+                pass
             
-    dates = sorted(list(set(dates)))
-    return dates, "ala"
+    return history, "ala" if history else "ala_not_found"
 
 async def analyze_cachy_package(session, pkg_name, cachy_bulk_data):
-    dates = cachy_bulk_data.get(pkg_name, [])
-    if dates:
-        return dates, "cachyos_mirror"
-        
-    headers = {'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'BoppOS-Chunkah'}
-    if token := os.environ.get('GITHUB_TOKEN'):
-        headers['Authorization'] = f'Bearer {token}'
-        
-    # Try searching multiple subdirectories where PKGBUILDs live
-    subdirs = [pkg_name, f"core/{pkg_name}", f"extra/{pkg_name}"]
-    dates = []
-    
-    for subdir in subdirs:
-        url = f"{CACHY_GITHUB_API}?path={subdir}/PKGBUILD"
-        resp_text = await fetch_with_backoff(session, url, headers)
-        if not resp_text: continue
-        
-        data = json.loads(resp_text)
-        if isinstance(data, list) and len(data) > 0:
-            for item in data:
-                try:
-                    date_str = item['commit']['author']['date']
-                    dt = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
-                    dates.append(dt)
-                except (KeyError, ValueError):
-                    pass
-            break # Found the package directory
-            
-    dates = sorted(list(set(dates)))
-    return dates, "cachyos_git"
+    history = cachy_bulk_data.get(pkg_name, {})
+    return history, "cachyos_mirror" if history else "cachyos_not_found"
 
 async def analyze_aur_package(session, pkg_name):
-    # 1. Resolve PackageBase from AUR RPC (required for correct cgit queries on split packages)
+    history = {}
+    
+    # 1. Resolve PackageBase from AUR RPC
     rpc_url = f"https://aur.archlinux.org/rpc/v5/info/{pkg_name}"
     rpc_resp = await fetch_with_backoff(session, rpc_url)
     if not rpc_resp:
-        return [], "aur_not_found"
+        return {}, "aur_not_found"
         
     try:
         rpc_data = json.loads(rpc_resp)
         if rpc_data.get("resultcount", 0) == 0:
-            return [], "aur_not_found"
+            return {}, "aur_not_found"
         
-        pkgbase = rpc_data["results"][0].get("PackageBase", pkg_name)
+        pkg_info = rpc_data["results"][0]
+        pkgbase = pkg_info.get("PackageBase", pkg_name)
+        
+        # Extract current version and save to our history
+        version = pkg_info.get("Version")
+        last_modified = pkg_info.get("LastModified")
+        if version and last_modified:
+            dt = datetime.fromtimestamp(last_modified, tz=timezone.utc)
+            history[version] = dt
     except (json.JSONDecodeError, KeyError):
         pkgbase = pkg_name
 
     # 2. Fetch history from cgit Atom feed
     atom_url = f"https://aur.archlinux.org/cgit/aur.git/atom/?h={pkgbase}"
     xml = await fetch_with_backoff(session, atom_url)
-    if not xml:
-        return [], "aur_not_found"
-        
-    dates = []
-    entries = re.findall(r'<entry>.*?</entry>', xml, re.DOTALL)
-    for entry in entries:
-        match = re.search(r'<updated>(.*?)</updated>', entry)
-        if match:
-            date_str = match.group(1)
-            try:
-                dt = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
-                dates.append(dt)
-            except ValueError:
-                try:
-                    dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                    dates.append(dt)
-                except ValueError:
-                    pass
+    if xml:
+        entries = re.findall(r'<entry>.*?</entry>', xml, re.DOTALL)
+        for entry in entries:
+            title_match = re.search(r'<title>(.*?)</title>', entry)
+            updated_match = re.search(r'<updated>(.*?)</updated>', entry)
+            if title_match and updated_match:
+                title = title_match.group(1)
+                date_str = updated_match.group(1)
+                # Extract version from title (usually the last word: "upgpkg: yay 12.1.3-1")
+                words = title.split()
+                if words:
+                    potential_version = words[-1]
+                    if any(c.isdigit() for c in potential_version):
+                        try:
+                            try:
+                                dt = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                            except ValueError:
+                                dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                            if potential_version not in history or history[potential_version] > dt:
+                                history[potential_version] = dt
+                        except ValueError:
+                            pass
     
-    dates = sorted(list(set(dates)))
-    return dates, "aur"
+    return history, "aur" if history else "aur_not_found"
 
 async def process_package(session, pkg, is_cachyos, is_aur, cache, max_age, semaphore, cachy_bulk_data):
     async with semaphore:
         now = datetime.now(timezone.utc)
         
-        # Check cache
-        if pkg in cache:
-            cached_entry = cache[pkg]
-            if 'fetched_at' in cached_entry:
-                fetched_at = datetime.fromisoformat(cached_entry['fetched_at'].replace('Z', '+00:00'))
+        existing_entry = cache.get(pkg, {})
+        history = {}
+        
+        # Migrate old format / load existing history
+        if 'history' in existing_entry:
+            for v, d_str in existing_entry['history'].items():
+                try:
+                    history[v] = datetime.fromisoformat(d_str.replace('Z', '+00:00'))
+                except ValueError:
+                    pass
+                    
+        # If we fetched very recently (e.g. < 3 days), use the cache to save network spam.
+        # We no longer use `max_age` (e.g. 30 days) to skip network requests entirely because
+        # we want to fetch new updates frequently to build the database.
+        if 'fetched_at' in existing_entry and 'history' in existing_entry:
+            try:
+                fetched_at = datetime.fromisoformat(existing_entry['fetched_at'].replace('Z', '+00:00'))
                 age_days = (now - fetched_at).days
-                if age_days <= max_age:
-                    return pkg, cached_entry
+                if age_days < 3:
+                    return pkg, existing_entry
+            except ValueError:
+                pass
 
         logging.debug(f"Fetching cadence for {pkg} (CachyOS: {is_cachyos})")
         
+        new_history = {}
+        source = "database"
+        
         if is_cachyos:
-            dates, source = await analyze_cachy_package(session, pkg, cachy_bulk_data)
-            if len(dates) < 2: # Fallback to ALA if CachyOS-specific check fails
-                dates, source = await analyze_arch_package(session, pkg)
+            new_history, source = await analyze_cachy_package(session, pkg, cachy_bulk_data)
+            if len(new_history) < 2: 
+                ala_history, ala_source = await analyze_arch_package(session, pkg)
+                new_history.update(ala_history)
         elif is_aur:
-            dates, source = await analyze_aur_package(session, pkg)
+            new_history, source = await analyze_aur_package(session, pkg)
         else:
-            dates, source = await analyze_arch_package(session, pkg)
-            if len(dates) < 2 and source == "ala_not_found":
-                dates, source = await analyze_aur_package(session, pkg)
+            new_history, source = await analyze_arch_package(session, pkg)
+            if not new_history and source == "ala_not_found":
+                new_history, source = await analyze_aur_package(session, pkg)
+                
+        # Merge new finds into the permanent history database
+        for v, dt in new_history.items():
+            if v not in history or history[v] > dt:
+                history[v] = dt
             
+        # Calculate interval from the complete history database
+        dates = sorted(history.values())
         num_releases = len(dates)
+        
         intervals = [(dates[i] - dates[i-1]).days for i in range(1, num_releases)]
+        # Filter out 0-day intervals (multiple revisions pushed on the exact same day)
+        intervals = [i for i in intervals if i > 0]
+        
         median_days = statistics.median(intervals) if intervals else 0.0
         
         interval_lbl = get_bucket(median_days, num_releases)
         
         if num_releases < 3:
             if num_releases == 1:
-                age_days = (now - dates[0].replace(tzinfo=timezone.utc)).days
+                age_days = (now - dates[0]).days
                 if age_days >= 365:
                     interval_lbl = "yearly"
                     logging.debug(f"[{pkg}] Single release is {age_days} days old. Bucketing as yearly.")
                 else:
-                    logging.warning(f"[{pkg}] Only 1 recent release found. Defaulting to weekly.")
+                    logging.warning(f"[{pkg}] Only 1 release found. Defaulting to weekly.")
             else:
                 logging.warning(f"[{pkg}] Only {num_releases} historical releases found. Defaulting to weekly.")
+                
+        # Cap history size to prevent the database from growing infinitely
+        MAX_HISTORY = 50
+        if len(history) > MAX_HISTORY:
+            # Keep the newest MAX_HISTORY entries (sorted chronologically)
+            recent_items = sorted(history.items(), key=lambda x: x[1])[-MAX_HISTORY:]
+            history = dict(recent_items)
+
+        serializable_history = {v: dt.isoformat() for v, dt in history.items()}
 
         result = {
+            "history": serializable_history,
             "interval": interval_lbl,
             "avg_days": round(median_days, 2),
             "source": source,
@@ -250,9 +279,12 @@ async def main():
     parser.add_argument("--cache-file", type=Path, default=Path("tools/package-intervals.json"), help="Output JSON file")
     parser.add_argument("--max-age-days", type=int, default=30, help="Max age for cached entries")
     parser.add_argument("--concurrency", type=int, default=8, help="Concurrent HTTP requests")
+    parser.add_argument("--dry-run", action="store_true", help="Print verbose changes and complete DB to stdout; skip writing to file")
     args = parser.parse_args()
     
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    # Automatically elevate to DEBUG for maximum verbosity during a dry-run
+    log_level = logging.DEBUG if args.dry_run else logging.INFO
+    logging.basicConfig(level=log_level, format="%(message)s")
     
     pkg_list = [line.strip() for line in args.packages if line.strip()]
     cachy_pkgs = set()
@@ -293,12 +325,45 @@ async def main():
     # Maintain alphabetical ordering for diff cleanliness
     sorted_cache = {k: new_cache[k] for k in sorted(new_cache.keys())}
     
-    args.cache_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.cache_file, "w") as f:
-        json.dump(sorted_cache, f, indent=2)
-        f.write("\n")
+    # Calculate and display granular changes
+    changes = []
+    for pkg, data in sorted_cache.items():
+        if pkg not in cache:
+            changes.append(f"  [+] {pkg}: New package added (Interval: {data['interval']})")
+            continue
+            
+        old_data = cache[pkg]
+        old_interval = old_data.get('interval')
+        new_interval = data['interval']
         
-    logging.info(f"Wrote {len(sorted_cache)} entries to {args.cache_file}")
+        pkg_changes = []
+        if old_interval != new_interval:
+            pkg_changes.append(f"Interval changed: {old_interval} -> {new_interval}")
+            
+        old_history = old_data.get('history', {})
+        new_history = data.get('history', {})
+        new_versions = set(new_history.keys()) - set(old_history.keys())
+        if new_versions:
+            pkg_changes.append(f"New versions added: {', '.join(new_versions)}")
+            
+        if pkg_changes:
+            changes.append(f"  [*] {pkg}: {'; '.join(pkg_changes)}")
+
+    if changes or args.dry_run:
+        logging.info(f"\n=== CHANGES DETECTED ({len(changes)}) ===")
+        for change in changes:
+            logging.info(change)
+        logging.info("========================\n")
+
+    if args.dry_run:
+        logging.info("DRY RUN: Skipping file write. Complete database follows:\n")
+        print(json.dumps(sorted_cache, indent=2))
+    else:
+        args.cache_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(args.cache_file, "w") as f:
+            json.dump(sorted_cache, f, indent=2)
+            f.write("\n")
+        logging.info(f"Wrote {len(sorted_cache)} entries to {args.cache_file}")
 
 if __name__ == "__main__":
     # Fix for environments where stdin is closed early

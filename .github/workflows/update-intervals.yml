@@ -14,6 +14,11 @@ on:
         required: false
         type: boolean
         default: false
+      dry_run:
+        description: 'Dry run (verbose output, no commit)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   update-intervals:
@@ -89,14 +94,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          DRY_RUN_ARG=""
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            DRY_RUN_ARG="--dry-run"
+          fi
+          
           cat build/all-packages.txt | python scripts/fetch-update-intervals.py \
             --cachyos-packages build/cachyos-packages.txt \
             --aur-packages build/aur-packages.txt \
             --cache-file scripts/package-intervals.json \
             --max-age-days ${{ github.event.inputs.max_age || '30' }} \
-            --concurrency 10
+            --concurrency 10 $DRY_RUN_ARG
 
       - name: Commit and Push Package Intervals
+        if: github.event.inputs.dry_run != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

@@ -61,6 +61,7 @@ jobs:
     runs-on: znver4
     outputs:
       should_skip: ${{ steps.check_compatibility.outputs.should_skip }}
+      flavors: ${{ steps.set_flavors.outputs.flavors }}
 
     permissions:
       contents: read
@@ -80,6 +81,24 @@ jobs:
           if ! grep -q avx512_vnni /proc/cpuinfo; then
             echo "::warning::Runner CPU does not support AVX512_VNNI. Skipping znver4 build."
             echo "should_skip=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine Target Flavors
+        id: set_flavors
+        run: |
+          if [ "${{ steps.check_compatibility.outputs.should_skip }}" == "true" ]; then
+            echo "flavors=[]" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "flavors=[\"plasma\", \"gnome\", \"niri\"]" >> $GITHUB_OUTPUT
+          else
+            FLAVORS=()
+            [ "${{ inputs.build_plasma }}" == "true" ] && FLAVORS+=('"plasma"')
+            [ "${{ inputs.build_gnome }}" == "true" ] && FLAVORS+=('"gnome"')
+            [ "${{ inputs.build_niri }}" == "true" ] && FLAVORS+=('"niri"')
+            JOINED=$(IFS=, ; echo "${FLAVORS[*]}")
+            echo "flavors=[$JOINED]" >> $GITHUB_OUTPUT
           fi
 
       - name: Free Disk Space (Self-Hosted)
@@ -337,17 +356,12 @@ jobs:
   build_flavors:
     name: Build ${{ matrix.flavor }} (znver4)
     needs: build_base
-    if: >-
-      needs.build_base.outputs.should_skip != 'true' &&
-      (github.event_name != 'workflow_dispatch' ||
-      (matrix.flavor == 'plasma' && inputs.build_plasma == true) ||
-      (matrix.flavor == 'gnome' && inputs.build_gnome == true) ||
-      (matrix.flavor == 'niri' && inputs.build_niri == true))
+    if: needs.build_base.outputs.should_skip != 'true' && needs.build_base.outputs.flavors != '[]'
     runs-on: znver4
     strategy:
       fail-fast: false
       matrix:
-        flavor: [plasma, gnome, niri]
+        flavor: ${{ fromJson(needs.build_base.outputs.flavors) }}
 
     permissions:
       contents: read

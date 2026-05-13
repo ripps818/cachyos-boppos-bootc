@@ -215,19 +215,22 @@ jobs:
       - name: Prepare Local Cache Directory
         run: |
           CACHE_DIR="/opt/boppos-pkg-cache/${{ env.DEFAULT_TAG }}"
-          sudo mkdir -p "$CACHE_DIR"
+          AUR_CACHE_DIR="/opt/boppos-aur-cache"
+          sudo mkdir -p "$CACHE_DIR" "$AUR_CACHE_DIR"
           sudo chown -R $USER:$USER "$CACHE_DIR"
+          sudo chmod 777 "$AUR_CACHE_DIR"
           
           # Delete problematic lua packages and incomplete downloads before build
           sudo rm -f "$CACHE_DIR"/lua* "$CACHE_DIR"/*.part
           
           # If the manual wipe toggle was checked, clear the cache
           if [ "${{ github.event.inputs.wipe_pkg_cache }}" == "true" ]; then
-            echo "Manual wipe triggered. Clearing local pacman cache..."
-            sudo rm -rf "$CACHE_DIR"/*
+            echo "Manual wipe triggered. Clearing local pacman and AUR caches..."
+            sudo rm -rf "$CACHE_DIR"/* "$AUR_CACHE_DIR"/*
           fi
           
           echo "LOCAL_CACHE_DIR=$CACHE_DIR" >> $GITHUB_ENV
+          echo "AUR_CACHE_DIR=$AUR_CACHE_DIR" >> $GITHUB_ENV
 
       - name: Generate Fastest Mirrors
         if: steps.check_compatibility.outputs.should_skip != 'true'
@@ -256,6 +259,7 @@ jobs:
 
           echo "::group::Building AUR builder"
           sudo podman build $PODMAN_OPTS "${AUR_BUILD_ARGS[@]}" -v "${{ env.LOCAL_CACHE_DIR }}:/var/cache/pacman/pkg:z" \
+            -v "${{ env.AUR_CACHE_DIR }}:/var/cache/makepkg:z" \
             --build-arg BASE_IMAGE_TAG=${{ env.BASE_TAG }} \
             --build-arg TARGET_CPU_MARCH=$MARCH \
             --network=host \
@@ -316,33 +320,40 @@ jobs:
           sudo podman tag "localhost/$CURRENT_IMAGE_NAME:$DEFAULT_TAG" "${IMAGE_REGISTRY}/${CURRENT_IMAGE_NAME}:${DEFAULT_TAG}"
           echo "::endgroup::"
 
-      - name: Prune Pacman Cache
+      - name: Prune Caches
         if: steps.check_compatibility.outputs.should_skip != 'true' && github.event_name != 'pull_request'
         run: |
           if [ ! -d "${{ env.LOCAL_CACHE_DIR }}" ] || [ -z "$(ls -A ${{ env.LOCAL_CACHE_DIR }})" ]; then
-            echo "Cache directory is empty or does not exist, skipping prune."
-            exit 0
+            echo "Pacman cache directory is empty or does not exist, skipping pacman prune."
+          else
+            echo "🧹 Pruning pacman cache to manage size..."
+            echo "Cache size before pruning:"
+            du -sh ${{ env.LOCAL_CACHE_DIR }}
+
+            # Determine the correct CachyOS base image to reuse for pruning
+            PRUNE_IMAGE="docker.io/cachyos/cachyos-${{ env.BASE_TAG }}"
+
+            PODMAN_OPTS=""
+            if [ "${{ github.event.inputs.unconfined_build }}" == "true" ]; then PODMAN_OPTS="--security-opt seccomp=unconfined"; fi
+
+            # Isolate the host cache mount to prevent PGP/keyring conflicts when installing pacman-contrib
+            sudo podman run $PODMAN_OPTS --rm --network=host -v ${{ env.LOCAL_CACHE_DIR }}:/host-cache:z \
+              $PRUNE_IMAGE \
+              bash -c "pacman -Sy --noconfirm archlinux-keyring cachyos-keyring && pacman -S --noconfirm pacman-contrib && paccache -c /host-cache -rk1"
+              
+            # Ensure problematic packages are purged after pruning too
+            sudo rm -f ${{ env.LOCAL_CACHE_DIR }}/lua* ${{ env.LOCAL_CACHE_DIR }}/*.part
+
+            echo "Pacman cache size after pruning:"
+            du -sh ${{ env.LOCAL_CACHE_DIR }}
           fi
-          echo "🧹 Pruning pacman cache to manage size..."
-          echo "Cache size before pruning:"
-          du -sh ${{ env.LOCAL_CACHE_DIR }}
-
-          # Determine the correct CachyOS base image to reuse for pruning
-          PRUNE_IMAGE="docker.io/cachyos/cachyos-${{ env.BASE_TAG }}"
-
-          PODMAN_OPTS=""
-          if [ "${{ github.event.inputs.unconfined_build }}" == "true" ]; then PODMAN_OPTS="--security-opt seccomp=unconfined"; fi
-
-          # Isolate the host cache mount to prevent PGP/keyring conflicts when installing pacman-contrib
-          sudo podman run $PODMAN_OPTS --rm --network=host -v ${{ env.LOCAL_CACHE_DIR }}:/host-cache:z \
-            $PRUNE_IMAGE \
-            bash -c "pacman -Sy --noconfirm archlinux-keyring cachyos-keyring && pacman -S --noconfirm pacman-contrib && paccache -c /host-cache -rk1"
-            
-          # Ensure problematic packages are purged after pruning too
-          sudo rm -f ${{ env.LOCAL_CACHE_DIR }}/lua* ${{ env.LOCAL_CACHE_DIR }}/*.part
-
-          echo "Cache size after pruning:"
-          du -sh ${{ env.LOCAL_CACHE_DIR }}
+          
+          if [ -d "${{ env.AUR_CACHE_DIR }}/src" ]; then
+            echo "🧹 Pruning AUR source cache (tarballs older than 15 days)..."
+            sudo find "${{ env.AUR_CACHE_DIR }}/src" -type f -mtime +15 -delete 2>/dev/null || true
+            echo "AUR cache size after pruning:"
+            du -sh "${{ env.AUR_CACHE_DIR }}" 2>/dev/null || true
+          fi
 
       - name: Clean Workspace & Podman Storage
         if: always()

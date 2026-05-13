@@ -1,9 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-JSON_FILE="${1:-scripts/package-intervals.json}"
-ROOTFS="${2:-/}"
-PKG_FILE="${3:-}"
+VERBOSE=0
+ARGS=()
+for arg in "$@"; do
+    if [[ "$arg" == "--verbose" || "$arg" == "-v" ]]; then
+        VERBOSE=1
+    else
+        ARGS+=("$arg")
+    fi
+done
+
+JSON_FILE="${ARGS[0]:-scripts/package-intervals.json}"
+ROOTFS="${ARGS[1]:-/}"
+PKG_FILE="${ARGS[2]:-}"
 CONCURRENCY=4
 
 if [[ ! -f "$JSON_FILE" ]]; then
@@ -20,6 +30,7 @@ echo "Applying user.update-interval xattrs to ROOTFS: $ROOTFS using $JSON_FILE"
 
 export JSON_FILE
 export ROOTFS
+export VERBOSE
 
 apply_pkg_xattrs() {
     local pkg="$1"
@@ -57,7 +68,9 @@ apply_pkg_xattrs() {
         fi
     done < <(pacman -Qql "$pkg" | grep -v '/$')
 
-    echo "$pkg: $interval ($count files)"
+    if [[ "$VERBOSE" -eq 1 ]]; then
+        echo "$pkg: $interval ($count files)"
+    fi
 }
 
 export -f apply_pkg_xattrs

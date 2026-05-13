@@ -6,6 +6,7 @@
 # Global build arguments must be declared before FROM to be used in image tags
 ARG TARGET_CPU_MARCH=v3
 ARG BASE_IMAGE_TAG=v3
+ARG VERBOSE=false
 
 # ==========================================
 # System Build
@@ -142,7 +143,8 @@ COPY files/base/base.yaml /tmp/base.yaml
 
 RUN --mount=type=tmpfs,dst=/run \
     chmod +x /tmp/install_packages.sh && \
-    /tmp/install_packages.sh /tmp/base.yaml
+    if [ "$VERBOSE" = "true" ]; then VERBOSE_ARG="--verbose"; else VERBOSE_ARG=""; fi && \
+    /tmp/install_packages.sh /tmp/base.yaml $VERBOSE_ARG
 
 # ==========================================
 # POST-INSTALL CONFIGURATION
@@ -224,7 +226,8 @@ RUN mkdir -p /usr/lib/opt && \
 COPY scripts/package-intervals.json /tmp/package-intervals.json
 COPY scripts/apply-update-intervals.sh /tmp/apply-update-intervals.sh
 RUN chmod +x /tmp/apply-update-intervals.sh && \
-    /tmp/apply-update-intervals.sh /tmp/package-intervals.json /
+    if [ "$VERBOSE" = "true" ]; then VERBOSE_ARG="--verbose"; else VERBOSE_ARG=""; fi && \
+    /tmp/apply-update-intervals.sh /tmp/package-intervals.json / $VERBOSE_ARG
 
 # Final system setup and cleanup
 RUN sed -i 's|^HOME=.*|HOME=/var/home|' "/etc/default/useradd" && \

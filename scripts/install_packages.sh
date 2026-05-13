@@ -1,8 +1,15 @@
 #!/bin/bash
 set -eo pipefail
 
-# Ensure a target YAML file was provided
-YAML_FILE=$1
+VERBOSE=0
+YAML_FILE=""
+for arg in "$@"; do
+    if [[ "$arg" == "--verbose" || "$arg" == "-v" ]]; then
+        VERBOSE=1
+    else
+        YAML_FILE="$arg"
+    fi
+done
 
 if [ -z "$YAML_FILE" ] || [ ! -f "$YAML_FILE" ]; then
     echo "Usage: $0 <path-to.yml>"
@@ -33,7 +40,12 @@ if [ -z "$PKGS" ]; then
     exit 0
 fi
 
-echo "Installing packages: $PKGS"
+if [ "$VERBOSE" -eq 1 ]; then
+    echo "Installing packages: $PKGS"
+else
+    PKG_COUNT=$(echo "$PKGS" | wc -w)
+    echo "Installing $PKG_COUNT packages from $YAML_FILE..."
+fi
 
 # Execute pacman installation with a retry loop
 MAX_RETRIES=3

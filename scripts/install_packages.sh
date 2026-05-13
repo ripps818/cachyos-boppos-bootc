@@ -53,13 +53,24 @@ RETRY_COUNT=0
 SUCCESS=false
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if pacman -Sy --noconfirm --ask 4 --needed $PKGS; then
-        SUCCESS=true
-        break
+    if [ "$VERBOSE" -eq 1 ]; then
+        if pacman -Sy --noconfirm --ask 4 --needed $PKGS; then
+            SUCCESS=true
+            break
+        fi
+    else
+        if pacman -Sy --noconfirm --ask 4 --needed $PKGS > /tmp/pacman.log 2>&1; then
+            SUCCESS=true
+            break
+        else
+            echo -e "\n================ PACMAN LOG ================"
+            cat /tmp/pacman.log || true
+            echo -e "============================================\n"
+        fi
     fi
 
     RETRY_COUNT=$((RETRY_COUNT+1))
-    echo "⚠️ Package installation failed! (Attempt $RETRY_COUNT of $MAX_RETRIES)"
+    echo "::warning title=Pacman Install Attempt Failed::Package installation failed! (Attempt $RETRY_COUNT of $MAX_RETRIES)"
 
     if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
         WAIT_TIME=$(( 5 * RETRY_COUNT ))
@@ -79,7 +90,7 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
 done
 
 if [ "$SUCCESS" = "false" ]; then
-    echo "❌ Error: Failed to install packages after $MAX_RETRIES attempts."
+    echo "::error title=Installation Aborted::Failed to install packages after $MAX_RETRIES attempts from $YAML_FILE."
     exit 1
 fi
 

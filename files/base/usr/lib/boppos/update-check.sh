@@ -109,7 +109,12 @@ done <<< "${PARSE_RESULT}"
 if [[ "${UPDATE_AVAILABLE}" == "false" && -z "${PARSE_ERROR}" ]]; then
     # 1. Use skopeo for a highly reliable registry check if available
     if command -v skopeo &>/dev/null && [[ -n "${IMAGE_REF}" ]]; then
-        REMOTE_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REF}" 2>/dev/null || true)
+        # Retry loop to handle transient network drops (e.g., resuming from sleep)
+        for attempt in 1 2 3; do
+            REMOTE_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REF}" 2>/dev/null || true)
+            [[ -n "${REMOTE_DIGEST}" ]] && break
+            sleep 5
+        done
         if [[ -n "${REMOTE_DIGEST}" && "${REMOTE_DIGEST}" != "${CURRENT_IMAGE}" ]]; then
             UPDATE_AVAILABLE="true"
             STAGED_IMAGE="${REMOTE_DIGEST}"
@@ -118,7 +123,12 @@ if [[ "${UPDATE_AVAILABLE}" == "false" && -z "${PARSE_ERROR}" ]]; then
 
     # 2. Fallback to bootc upgrade --check
     if [[ "${UPDATE_AVAILABLE}" == "false" ]]; then
-        CHECK_OUT=$(bootc upgrade --check 2>&1) || true
+        for attempt in 1 2 3; do
+            CHECK_OUT=$(bootc upgrade --check 2>&1) || true
+            # Break early if we get a definitive response (either an update, or explicitly no update)
+            echo "${CHECK_OUT}" | grep -qi -E "available update|upgrade available|no update" && break
+            sleep 5
+        done
         # bootc outputs "Available update: <digest>" if one exists
         if echo "${CHECK_OUT}" | grep -qi -E "available update|upgrade available"; then
             UPDATE_AVAILABLE="true"

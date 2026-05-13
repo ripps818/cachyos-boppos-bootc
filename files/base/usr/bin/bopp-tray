@@ -54,12 +54,13 @@ except ImportError as exc:
 STATUS_FILE = Path("/run/boppos/update-status.json")
 POLL_INTERVAL_SECONDS = 300           # 5 min fallback poll
 NOTIFY_COOLDOWN_SECONDS = 3600        # don't re-notify for the same digest within 1 h
-STATE_FILE = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "bopp-tray-state.json"
+STATE_FILE = Path(os.path.expanduser("~/.cache/boppos/bopp-tray-state.json"))
 
 ICON_SIZE = 64
 
 # Terminal emulators tried in order when we need to open an interactive window
 TERMINALS = [
+    "ptyxis",
     "kitty", "alacritty", "foot", "wezterm", "ghostty",
     "konsole", "gnome-terminal", "xterm",
 ]
@@ -149,6 +150,7 @@ def _load_local_state() -> dict:
 
 def _save_local_state(state: dict) -> None:
     try:
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         STATE_FILE.write_text(json.dumps(state))
     except Exception:
         pass
@@ -181,7 +183,7 @@ def open_in_terminal(cmd: list[str], title: str = "BoppOS") -> None:
         _notify("No terminal found", "Install kitty, alacritty, or another terminal.", urgent=True)
         return
     full_cmd: list[str]
-    if term in ("kitty", "alacritty", "foot", "ghostty", "wezterm"):
+    if term in ("ptyxis", "kitty", "alacritty", "foot", "ghostty", "wezterm"):
         full_cmd = [term, "--title", title, "--"] + cmd
     elif term == "konsole":
         full_cmd = ["konsole", "--title", title, "-e"] + cmd
@@ -232,6 +234,7 @@ class BoppTray:
         )
         self._lock = threading.Lock()
         self._wakeup = threading.Event()
+        self._manual_check_pending = False
 
     # ── Menu ─────────────────────────────────────────────────────────────────
 
@@ -269,6 +272,8 @@ class BoppTray:
     # ── Callbacks ─────────────────────────────────────────────────────────────
 
     def _on_check_now(self, _icon, _item) -> None:
+        with self._lock:
+            self._manual_check_pending = True
         _trigger_update_check()
 
     def _on_view_diff(self, _icon, _item) -> None:
@@ -282,7 +287,7 @@ class BoppTray:
             ) as f:
                 f.write(diff)
                 tmppath = f.name
-            open_in_terminal(["bash", "-c", f"less '{tmppath}'; rm -f '{tmppath}'"],
+            open_in_terminal(["bash", "-c", 'less -R "$1"; rm -f "$1"', "--", tmppath],
                              title="BoppOS — Pending Changes")
         else:
             open_in_terminal(["bopp-diff"], title="BoppOS — Pending Changes")
@@ -304,11 +309,15 @@ class BoppTray:
 
         with self._lock:
             self._status = new_status
+            is_manual = self._manual_check_pending
+            self._manual_check_pending = False
 
         if new_status is None:
             self._icon.icon = _make_icon(False)
             self._icon.title = "BoppOS: update status unavailable"
             self._icon.menu = self._build_menu()
+            if is_manual:
+                _notify("Update check failed", "Could not read status file.", urgent=True)
             return
 
         has_update: bool = bool(new_status.get("update_available"))
@@ -321,13 +330,14 @@ class BoppTray:
         self._icon.icon = _make_icon(has_update)
         self._icon.menu = self._build_menu()
 
+        now = time.time()
+
         if has_update:
             self._icon.title = "BoppOS: system update available!"
             # Only notify if we haven't already notified for this staged digest
             last_notified = self._local_state.get("last_notified_digest", "")
             last_notified_at = self._local_state.get("last_notified_at", 0)
-            now = time.time()
-            if staged != last_notified or (now - last_notified_at) > NOTIFY_COOLDOWN_SECONDS:
+            if is_manual or staged != last_notified or (now - last_notified_at) > NOTIFY_COOLDOWN_SECONDS:
                 _notify(
                     "BoppOS update available!",
                     "A new system image is ready. Right-click the tray icon to apply.",
@@ -337,6 +347,11 @@ class BoppTray:
                 _save_local_state(self._local_state)
         else:
             self._icon.title = "BoppOS: system is up to date"
+            if is_manual:
+                if error:
+                    _notify("Update check finished", f"Error: {error}")
+                else:
+                    _notify("System is up to date", "No new updates found for BoppOS.")
 
     def _poll_loop(self) -> None:
         """Background thread: refresh on SIGUSR1 wakeup or POLL_INTERVAL timeout."""

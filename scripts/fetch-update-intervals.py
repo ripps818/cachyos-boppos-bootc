@@ -26,9 +26,7 @@ CACHY_REPOS = [
     ("x86_64", "cachyos-core")
 ]
 
-def get_bucket(median_days, num_releases):
-    if num_releases < 3:
-        return "weekly"
+def get_bucket(median_days):
     if median_days <= 2: return "daily"
     elif median_days <= 10: return "weekly"
     elif median_days <= 21: return "biweekly"
@@ -239,18 +237,19 @@ async def process_package(session, pkg, is_cachyos, is_aur, cache, max_age, sema
         
         median_days = statistics.median(intervals) if intervals else 0.0
         
-        interval_lbl = get_bucket(median_days, num_releases)
+        interval_lbl = get_bucket(median_days)
         
         if num_releases < 3:
             if num_releases == 1:
                 age_days = (now - dates[0]).days
-                if age_days >= 365:
-                    interval_lbl = "yearly"
-                    logging.debug(f"[{pkg}] Single release is {age_days} days old. Bucketing as yearly.")
+                if age_days < 10:
+                    interval_lbl = "weekly"
+                    logging.warning(f"[{pkg}] Only 1 release found (age: {age_days} days). Defaulting to weekly.")
                 else:
-                    logging.warning(f"[{pkg}] Only 1 release found. Defaulting to weekly.")
+                    interval_lbl = get_bucket(age_days)
+                    logging.debug(f"[{pkg}] Single release is {age_days} days old. Bucketing as {interval_lbl}.")
             else:
-                logging.warning(f"[{pkg}] Only {num_releases} historical releases found. Defaulting to weekly.")
+                logging.debug(f"[{pkg}] Only {num_releases} historical releases found. Measured interval: {median_days} avg days. Bucketing as {interval_lbl}.")
                 
         # Cap history size to prevent the database from growing infinitely
         MAX_HISTORY = 50

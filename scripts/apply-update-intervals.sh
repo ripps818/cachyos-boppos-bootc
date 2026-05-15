@@ -68,9 +68,8 @@ apply_pkg_xattrs() {
         fi
     done < <(pacman -Qql "$pkg" | grep -v '/$')
 
-    if [[ "$VERBOSE" -eq 1 ]]; then
-        echo "$pkg: $interval ($count files)"
-    fi
+    # Always output stats for the awk summary to parse
+    echo "STATS|$pkg|$interval|$count"
 }
 
 export -f apply_pkg_xattrs
@@ -88,14 +87,19 @@ if [[ -z "$PKG_LIST" ]]; then
 fi
 
 # Run apply in parallel and print a summarized table at the end
-echo "$PKG_LIST" | xargs -P "$CONCURRENCY" -I {} bash -c 'apply_pkg_xattrs "$@"' _ {} | awk '
-    {
-        match($0, /.*: ([a-z]+) \(([0-9]+) files\)/, arr)
-        if (arr[1] != "") {
-            intervals[arr[1]]++
-            files[arr[1]] += arr[2]
+echo "$PKG_LIST" | xargs -P "$CONCURRENCY" -I {} bash -c 'apply_pkg_xattrs "$@"' _ {} | awk -v verbose="$VERBOSE" -F'|' '
+    /^STATS\|/ {
+        pkg = $2
+        interval = $3
+        count = $4
+        intervals[interval]++
+        files[interval] += count
+        if (verbose == 1) {
+            print "Applied user.update-interval=" interval " to " pkg " (" count " files)"
         }
+        next
     }
+    { print }
     END {
         print "\n--- user.update-interval Summary ---"
         for (i in intervals) { print i ": " intervals[i] " packages, " files[i] " files" }

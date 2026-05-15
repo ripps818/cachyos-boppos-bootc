@@ -118,3 +118,7 @@ pkill -9 gpg-agent || true
 pkill -9 dirmngr || true
 pkill -9 keyboxd || true
 pkill -9 scdaemon || true
+pkill -9 dbus-daemon || true
+pkill -9 dbus-broker || true
+pkill -9 gvfsd || true
+pkill -9 dconf-service || true

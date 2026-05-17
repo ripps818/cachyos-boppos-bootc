@@ -36,7 +36,7 @@ kde-utilities:
   - sweeper
   - plasma-foreground-booster
   - haruna
-  - phonon-qt6-vlc
+  - phonon-qt6-mpv
   - tesseract
   - tesseract-data-eng
 kde-media:

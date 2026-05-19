@@ -186,6 +186,7 @@ shells:
   - oh-my-zsh-git
   - atuin
   - starship
+  - direnv
 cli-utilities:
   - zoxide
   - eza
